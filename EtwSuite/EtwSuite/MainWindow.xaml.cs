@@ -16,14 +16,20 @@ namespace EtwSuite
         {
             InitializeComponent();
 
-            ViewModel = new ProvidersViewModel(new EtwProviderCatalog());
-            Root.DataContext = ViewModel;
-            ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+            var providerCatalog = new EtwProviderCatalog();
+            ProvidersViewModel = new ProvidersViewModel(providerCatalog);
+            ConsumeProviderViewModel = new ConsumeProviderViewModel(providerCatalog);
+
+            ListProvidersView.DataContext = ProvidersViewModel;
+            ConsumeProviderView.DataContext = ConsumeProviderViewModel;
+            ProvidersViewModel.PropertyChanged += ProvidersViewModel_PropertyChanged;
 
             Closed += MainWindow_Closed;
         }
 
-        public ProvidersViewModel ViewModel { get; }
+        public ProvidersViewModel ProvidersViewModel { get; }
+
+        public ConsumeProviderViewModel ConsumeProviderViewModel { get; }
 
         private async void Root_Loaded(object sender, RoutedEventArgs e)
         {
@@ -31,19 +37,30 @@ namespace EtwSuite
 
             try
             {
-                await ViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await ProvidersViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await ConsumeProviderViewModel.LoadProvidersAsync(_loadCancellation.Token);
             }
             catch (OperationCanceledException)
             {
             }
         }
 
+        private void Root_SelectionChanged(
+            NavigationView sender,
+            NavigationViewSelectionChangedEventArgs args)
+        {
+            string? tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
+            ListProvidersView.Visibility = tag == "ListProviders" ? Visibility.Visible : Visibility.Collapsed;
+            ConsumeProviderView.Visibility = tag == "ConsumeProvider" ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         private async void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            EtwProviderInfo? previousProvider = ViewModel.SelectedProvider;
-            ViewModel.SearchText = ((TextBox)sender).Text;
+            EtwProviderInfo? previousProvider = ProvidersViewModel.SelectedProvider;
+            ProvidersViewModel.SearchText = ((TextBox)sender).Text;
 
-            if (ViewModel.SelectedProvider is not null && ViewModel.SelectedProvider != previousProvider)
+            if (ProvidersViewModel.SelectedProvider is not null &&
+                ProvidersViewModel.SelectedProvider != previousProvider)
             {
                 try
                 {
@@ -55,7 +72,7 @@ namespace EtwSuite
             }
         }
 
-        private async void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        private async void ProvidersViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName != nameof(ProvidersViewModel.SelectedProvider))
             {
@@ -73,9 +90,9 @@ namespace EtwSuite
 
         private void SchemaSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (ViewModel.SelectedProviderDetails is not null)
+            if (ProvidersViewModel.SelectedProviderDetails is not null)
             {
-                ViewModel.SelectedProviderDetails.SchemaSearchText = ((TextBox)sender).Text;
+                ProvidersViewModel.SelectedProviderDetails.SchemaSearchText = ((TextBox)sender).Text;
             }
         }
 
@@ -90,13 +107,37 @@ namespace EtwSuite
             }
         }
 
-        private void MainWindow_Closed(object sender, WindowEventArgs args)
+        private void ConsumeSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            ViewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            ConsumeProviderViewModel.SearchText = ((TextBox)sender).Text;
+        }
+
+        private async void StartStopConsumingButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (ConsumeProviderViewModel.CanStop)
+                {
+                    await ConsumeProviderViewModel.StopAsync();
+                }
+                else
+                {
+                    await ConsumeProviderViewModel.StartAsync(_loadCancellation.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private async void MainWindow_Closed(object sender, WindowEventArgs args)
+        {
+            ProvidersViewModel.PropertyChanged -= ProvidersViewModel_PropertyChanged;
             _loadCancellation.Cancel();
             _schemaLoadCancellation?.Cancel();
             _schemaLoadCancellation?.Dispose();
             _loadCancellation.Dispose();
+            await ConsumeProviderViewModel.DisposeAsync();
         }
 
         private async Task LoadSelectedProviderSchemaAsync()
@@ -105,7 +146,7 @@ namespace EtwSuite
             _schemaLoadCancellation?.Dispose();
             _schemaLoadCancellation = CancellationTokenSource.CreateLinkedTokenSource(_loadCancellation.Token);
 
-            await ViewModel.LoadSelectedProviderSchemaAsync(_schemaLoadCancellation.Token);
+            await ProvidersViewModel.LoadSelectedProviderSchemaAsync(_schemaLoadCancellation.Token);
         }
     }
 }
