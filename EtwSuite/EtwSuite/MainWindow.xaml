@@ -94,6 +94,7 @@
                 <controls:TextBlock
                     FontSize="20"
                     FontWeight="SemiBold"
+                    IsTextSelectionEnabled="True"
                     Text="{Binding Name}"
                     TextWrapping="Wrap" />
 
@@ -103,8 +104,9 @@
                     <controls:TextBlock
                         FontWeight="SemiBold"
                         Text="Provider GUID" />
-                    <controls:TextBlock
+                    <controls:TextBox
                         FontFamily="Consolas"
+                        IsReadOnly="True"
                         Text="{Binding IdText}"
                         TextWrapping="Wrap" />
                 </controls:StackPanel>
@@ -115,7 +117,9 @@
                     <controls:TextBlock
                         FontWeight="SemiBold"
                         Text="Schema source" />
-                    <controls:TextBlock Text="{Binding SchemaSource}" />
+                    <controls:TextBox
+                        IsReadOnly="True"
+                        Text="{Binding SchemaSource}" />
                 </controls:StackPanel>
 
                 <controls:TextBlock
