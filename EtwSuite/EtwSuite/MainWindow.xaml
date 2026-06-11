@@ -212,6 +212,7 @@
                             <controls:ListView.ItemTemplate>
                                 <DataTemplate>
                                     <controls:Expander
+                                        HorizontalContentAlignment="Stretch"
                                         HorizontalAlignment="Stretch"
                                         IsTabStop="True">
                                         <controls:Expander.Header>
@@ -255,6 +256,7 @@
                                         </controls:Expander.Header>
 
                                         <controls:Grid
+                                            HorizontalAlignment="Stretch"
                                             Padding="48,0,12,12"
                                             RowSpacing="6">
                                             <controls:Grid.RowDefinitions>
@@ -269,11 +271,12 @@
 
                                             <controls:Grid
                                                 Grid.Row="1"
+                                                HorizontalAlignment="Stretch"
                                                 Padding="0,6,0,4"
                                                 ColumnSpacing="12">
                                                 <controls:Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="2*" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </controls:Grid.ColumnDefinitions>
                                                 <controls:TextBlock
                                                     FontWeight="SemiBold"
@@ -281,6 +284,7 @@
                                                 <controls:TextBlock
                                                     Grid.Column="1"
                                                     FontWeight="SemiBold"
+                                                    HorizontalAlignment="Right"
                                                     Text="Type" />
                                             </controls:Grid>
 
@@ -290,11 +294,12 @@
                                                 <controls:ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <controls:Grid
+                                                            HorizontalAlignment="Stretch"
                                                             Padding="0,3,0,3"
                                                             ColumnSpacing="12">
                                                             <controls:Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="2*" />
                                                                 <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
                                                             </controls:Grid.ColumnDefinitions>
                                                             <controls:TextBlock
                                                                 IsTextSelectionEnabled="True"
@@ -302,6 +307,7 @@
                                                                 TextTrimming="CharacterEllipsis" />
                                                             <controls:TextBlock
                                                                 Grid.Column="1"
+                                                                HorizontalAlignment="Right"
                                                                 IsTextSelectionEnabled="True"
                                                                 Text="{Binding Type}"
                                                                 TextTrimming="CharacterEllipsis" />
