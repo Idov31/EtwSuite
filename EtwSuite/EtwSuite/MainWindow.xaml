@@ -61,6 +61,7 @@
             <controls:ListView
                 ItemsSource="{Binding Providers}"
                 SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
+                SelectionChanged="ProvidersListView_SelectionChanged"
                 SelectionMode="Single">
                 <controls:ListView.ItemTemplate>
                     <DataTemplate>
@@ -89,6 +90,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                 </controls:Grid.RowDefinitions>
 
                 <controls:TextBlock
@@ -125,14 +127,108 @@
                 <controls:TextBlock
                     Grid.Row="3"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="Additional metadata such as keywords, levels, tasks, opcodes, and event descriptors will be added by the metadata parser roadmap items."
+                    Text="{Binding SchemaCountText}"
                     TextWrapping="Wrap" />
 
-                <controls:TextBlock
+                <controls:Grid
                     Grid.Row="4"
+                    RowSpacing="8">
+                    <controls:Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </controls:Grid.RowDefinitions>
+
+                    <controls:TextBox
+                        Header="Search schema"
+                        PlaceholderText="Event, task, id, opcode, level, parameter, or type"
+                        TextChanged="SchemaSearchTextBox_TextChanged" />
+
+                    <controls:ListView
+                        Grid.Row="1"
+                        ItemsSource="{Binding SchemaItems}"
+                        SelectionMode="None">
+                        <controls:ListView.ItemTemplate>
+                            <DataTemplate>
+                                <controls:Expander>
+                                    <controls:Expander.Header>
+                                        <controls:Grid ColumnSpacing="12">
+                                            <controls:Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </controls:Grid.ColumnDefinitions>
+
+                                            <controls:TextBlock
+                                                FontWeight="SemiBold"
+                                                Text="{Binding Name}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock
+                                                Grid.Column="1"
+                                                Text="{Binding Id}" />
+                                            <controls:TextBlock
+                                                Grid.Column="2"
+                                                Text="{Binding Version}" />
+                                            <controls:TextBlock
+                                                Grid.Column="3"
+                                                Text="{Binding Opcode}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock
+                                                Grid.Column="4"
+                                                Text="{Binding Level}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </controls:Grid>
+                                    </controls:Expander.Header>
+
+                                    <controls:ListView
+                                        ItemsSource="{Binding Parameters}"
+                                        SelectionMode="None">
+                                        <controls:ListView.Header>
+                                            <controls:Grid Padding="0,0,0,6" ColumnSpacing="12">
+                                                <controls:Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="2*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </controls:Grid.ColumnDefinitions>
+                                                <controls:TextBlock
+                                                    FontWeight="SemiBold"
+                                                    Text="Parameter" />
+                                                <controls:TextBlock
+                                                    Grid.Column="1"
+                                                    FontWeight="SemiBold"
+                                                    Text="Type" />
+                                            </controls:Grid>
+                                        </controls:ListView.Header>
+                                        <controls:ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <controls:Grid ColumnSpacing="12">
+                                                    <controls:Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="2*" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </controls:Grid.ColumnDefinitions>
+                                                    <controls:TextBlock
+                                                        IsTextSelectionEnabled="True"
+                                                        Text="{Binding Name}"
+                                                        TextTrimming="CharacterEllipsis" />
+                                                    <controls:TextBlock
+                                                        Grid.Column="1"
+                                                        IsTextSelectionEnabled="True"
+                                                        Text="{Binding Type}" />
+                                                </controls:Grid>
+                                            </DataTemplate>
+                                        </controls:ListView.ItemTemplate>
+                                    </controls:ListView>
+                                </controls:Expander>
+                            </DataTemplate>
+                        </controls:ListView.ItemTemplate>
+                    </controls:ListView>
+                </controls:Grid>
+
+                <controls:TextBlock
+                    Grid.Row="5"
                     VerticalAlignment="Bottom"
                     Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                    Text="{Binding DataContext.ErrorMessage, ElementName=Root}"
+                    Text="{Binding SchemaStatus}"
                     TextWrapping="Wrap" />
             </controls:Grid>
         </controls:Grid>

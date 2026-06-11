@@ -95,6 +95,45 @@ public sealed class ProvidersViewModel : ObservableObject
         }
     }
 
+    public async Task LoadSelectedProviderSchemaAsync(CancellationToken cancellationToken)
+    {
+        EtwProviderInfo? provider = SelectedProvider;
+        ProviderDetailsViewModel? details = SelectedProviderDetails;
+        if (provider is null || details is null)
+        {
+            return;
+        }
+
+        details.BeginSchemaLoad();
+
+        try
+        {
+            EtwProviderSchema schema = await _providerCatalog.GetProviderSchemaAsync(provider, cancellationToken);
+            if (SelectedProvider == provider && SelectedProviderDetails == details)
+            {
+                details.SetSchema(schema);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (SelectedProvider == provider && SelectedProviderDetails == details)
+            {
+                details.SetSchemaError(ex.Message);
+            }
+        }
+        finally
+        {
+            if (SelectedProvider == provider && SelectedProviderDetails == details)
+            {
+                details.EndSchemaLoad();
+            }
+        }
+    }
+
     private void ApplyFilter()
     {
         EtwProviderInfo? previousSelection = SelectedProvider;
@@ -121,4 +160,3 @@ public sealed class ProvidersViewModel : ObservableObject
         OnPropertyChanged(nameof(ProviderCountText));
     }
 }
-
