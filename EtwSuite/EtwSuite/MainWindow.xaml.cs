@@ -5,9 +5,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using System.ComponentModel;
-using Windows.Storage.Pickers;
+using System.Runtime.InteropServices;
 using Windows.System;
-using WinRT.Interop;
 
 namespace EtwSuite
 {
@@ -204,38 +203,19 @@ namespace EtwSuite
 
         private async void ExportEventsButton_Click(object sender, RoutedEventArgs e)
         {
-            string format = ConsumeProviderViewModel.SelectedExportFormat;
-            var picker = new FileSavePicker
-            {
-                SuggestedFileName = $"etw-events-{DateTimeOffset.Now:yyyyMMdd-HHmmss}",
-            };
-
-            if (format == "CSV")
-            {
-                picker.FileTypeChoices.Add("CSV", new List<string> { ".csv" });
-            }
-            else
-            {
-                picker.FileTypeChoices.Add("JSON", new List<string> { ".json" });
-            }
-
-            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-            Windows.Storage.StorageFile? file = await picker.PickSaveFileAsync();
-            if (file is null)
-            {
-                return;
-            }
-
             try
             {
-                string content = ConsumeProviderViewModel.CreateExportContent();
-                if (string.IsNullOrEmpty(content))
+                string extension = ConsumeProviderViewModel.GetExportFileExtension();
+                string format = ConsumeProviderViewModel.SelectedExportFormat.ToUpperInvariant();
+                string suggestedName = ConsumeProviderViewModel.GetDefaultExportFileName();
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? selectedPath = ShowSaveDialog(ownerHandle, suggestedName, extension, format);
+                if (string.IsNullOrWhiteSpace(selectedPath))
                 {
                     return;
                 }
 
-                await Windows.Storage.FileIO.WriteTextAsync(file, content);
-                ConsumeProviderViewModel.ReportExported();
+                await ConsumeProviderViewModel.ExportAsync(selectedPath, _loadCancellation.Token);
             }
             catch (OperationCanceledException)
             {
@@ -243,6 +223,68 @@ namespace EtwSuite
             catch (Exception ex)
             {
                 ConsumeProviderViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private static string? ShowSaveDialog(nint ownerHandle, string suggestedFileName, string extension, string format)
+        {
+            Type? dialogType = Type.GetTypeFromCLSID(new Guid("C0B4E2F3-BA21-4773-8DBA-335EC946EB8B"));
+            if (dialogType is null)
+            {
+                throw new InvalidOperationException("The file save dialog type could not be loaded.");
+            }
+
+            object dialogObject = Activator.CreateInstance(dialogType)
+                ?? throw new InvalidOperationException("Failed to create file save dialog.");
+            var dialog = (IFileDialog)dialogObject;
+
+            IShellItem? result = null;
+            try
+            {
+                dialog.SetTitle("Export events");
+                dialog.SetFileName(suggestedFileName);
+                dialog.SetDefaultExtension(extension.TrimStart('.'));
+                dialog.SetOptions(FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.OverwritePrompt);
+                dialog.SetFileTypes(
+                    1,
+                    new[]
+                    {
+                        new ComDlgFilterSpec
+                        {
+                            Name = $"{format} file",
+                            Spec = $"*{extension}",
+                        },
+                    });
+
+                int showResult = dialog.Show(ownerHandle);
+                if (showResult == unchecked((int)0x800704C7))
+                {
+                    return null;
+                }
+
+                Marshal.ThrowExceptionForHR(showResult);
+                dialog.GetResult(out result);
+                result.GetDisplayName(ShellItemDisplayName.FileSystemPath, out nint filePathPtr);
+                try
+                {
+                    return Marshal.PtrToStringUni(filePathPtr);
+                }
+                finally
+                {
+                    if (filePathPtr != nint.Zero)
+                    {
+                        Marshal.FreeCoTaskMem(filePathPtr);
+                    }
+                }
+            }
+            finally
+            {
+                if (result is not null)
+                {
+                    Marshal.ReleaseComObject(result);
+                }
+
+                Marshal.ReleaseComObject(dialog);
             }
         }
 
@@ -287,6 +329,73 @@ namespace EtwSuite
             _schemaLoadCancellation = CancellationTokenSource.CreateLinkedTokenSource(_loadCancellation.Token);
 
             await ProvidersViewModel.LoadSelectedProviderSchemaAsync(_schemaLoadCancellation.Token);
+        }
+
+        [ComImport]
+        [Guid("42f85136-db7e-439c-85f1-e4075d135fc8")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IFileDialog
+        {
+            [PreserveSig]
+            int Show(nint parent);
+            void SetFileTypes(uint fileTypeCount, [MarshalAs(UnmanagedType.LPArray)] ComDlgFilterSpec[] filterSpecs);
+            void SetFileTypeIndex(uint index);
+            void GetFileTypeIndex(out uint index);
+            void Advise(nint eventSink, out uint cookie);
+            void Unadvise(uint cookie);
+            void SetOptions(FileOpenOptions options);
+            void GetOptions(out FileOpenOptions options);
+            void SetDefaultFolder(IShellItem shellItem);
+            void SetFolder(IShellItem shellItem);
+            void GetFolder(out IShellItem shellItem);
+            void GetCurrentSelection(out IShellItem shellItem);
+            void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name);
+            void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+            void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+            void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);
+            void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label);
+            void GetResult(out IShellItem shellItem);
+            void AddPlace(IShellItem shellItem, int alignment);
+            void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string defaultExtension);
+            void Close(int hr);
+            void SetClientGuid(ref Guid guid);
+            void ClearClientData();
+            void SetFilter(nint filter);
+        }
+
+        [ComImport]
+        [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        internal interface IShellItem
+        {
+            void BindToHandler(nint bindContext, ref Guid handlerGuid, ref Guid interfaceGuid, out nint handler);
+            void GetParent(out IShellItem parent);
+            void GetDisplayName(ShellItemDisplayName sigdnName, out nint name);
+            void GetAttributes(uint requestedAttributes, out uint attributes);
+            void Compare(IShellItem shellItem, uint hint, out int order);
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        internal struct ComDlgFilterSpec
+        {
+            [MarshalAs(UnmanagedType.LPWStr)]
+            public string Name;
+
+            [MarshalAs(UnmanagedType.LPWStr)]
+            public string Spec;
+        }
+
+        [Flags]
+        internal enum FileOpenOptions : uint
+        {
+            OverwritePrompt = 0x00000002,
+            PathMustExist = 0x00000800,
+            ForceFileSystem = 0x00000040,
+        }
+
+        internal enum ShellItemDisplayName : uint
+        {
+            FileSystemPath = 0x80058000,
         }
     }
 }

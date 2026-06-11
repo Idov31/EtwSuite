@@ -330,6 +330,31 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         }
     }
 
+    public string GetExportFileExtension()
+    {
+        string format = SelectedExportFormat.ToUpperInvariant();
+        return format switch
+        {
+            "JSON" => ".json",
+            "CSV" => ".csv",
+            _ => throw new NotSupportedException($"{SelectedExportFormat} export is not supported yet."),
+        };
+    }
+
+    public string GetDefaultExportFileName()
+    {
+        DateTimeOffset now = DateTimeOffset.Now;
+        string providerName = !string.IsNullOrWhiteSpace(SelectedProvider?.Name)
+            ? SanitizeFileNameComponent(SelectedProvider.Name)
+            : string.Empty;
+
+        string providerToken = string.IsNullOrWhiteSpace(providerName)
+            ? (SelectedProvider?.Id ?? Guid.Empty).ToString("D")
+            : providerName;
+
+        return $"{providerToken}_{now:yyyyMMdd}_{now:HH}_{now:mm}{GetExportFileExtension()}";
+    }
+
     public async Task ExportAsync(string filePath, CancellationToken cancellationToken)
     {
         string content = CreateExportContent();
@@ -450,6 +475,18 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         }
 
         return $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
+    private static string SanitizeFileNameComponent(string value)
+    {
+        char[] invalidChars = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+        foreach (char character in value.Trim())
+        {
+            builder.Append(invalidChars.Contains(character) ? '_' : character);
+        }
+
+        return builder.ToString().Trim();
     }
 
     private void ApplyFilter()
