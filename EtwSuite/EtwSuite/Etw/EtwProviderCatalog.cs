@@ -188,11 +188,23 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
         try
         {
-            return ParseRegisteredManifest(provider, manifestXml);
+            EtwProviderSchema schema = ParseRegisteredManifest(provider, manifestXml);
+            if (schema.Events.Count == 0)
+            {
+                diagnostics.Add("Registered manifest was found, but no event elements were parsed from it.");
+                return new EtwProviderSchema(provider, schema.Events, diagnostics.Distinct(StringComparer.Ordinal).ToArray());
+            }
+
+            return schema;
         }
         catch (XmlException ex)
         {
             diagnostics.Add($"Registered manifest XML could not be parsed: {ex.Message}");
+            return null;
+        }
+        catch (InvalidOperationException ex)
+        {
+            diagnostics.Add($"Registered manifest XML could not be interpreted: {ex.Message}");
             return null;
         }
     }
@@ -246,8 +258,8 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
                 GetManifestEventName(eventElement, task, id),
                 id,
                 version,
-                string.IsNullOrWhiteSpace(opcode) ? "0" : opcode,
-                string.IsNullOrWhiteSpace(level) ? "0" : level,
+                string.IsNullOrWhiteSpace(opcode) ? "0" : NormalizeManifestReference(opcode),
+                string.IsNullOrWhiteSpace(level) ? "0" : NormalizeManifestReference(level),
                 parameters ?? Array.Empty<EtwSchemaParameter>()));
         }
 
@@ -325,6 +337,13 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         }
 
         return value;
+    }
+
+    private static string NormalizeManifestReference(string value)
+    {
+        return value.StartsWith("win:", StringComparison.OrdinalIgnoreCase)
+            ? value[4..]
+            : value;
     }
 
     private static string ReadAttribute(XElement element, string name, string fallback)
@@ -751,7 +770,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
         return normalizedType switch
         {
-            "" => "Null",
+            "" => "Unknown",
             "Null" => "Null",
             "UnicodeString" => "WideString",
             "AnsiString" => "AnsiString",
@@ -784,7 +803,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
             "AnsiChar" => "AnsiChar",
             "SizeT" => "SizeT",
             "struct" => "Struct",
-            _ => string.IsNullOrWhiteSpace(inputType) ? "Null" : normalizedType
+            _ => string.IsNullOrWhiteSpace(inputType) ? "Unknown" : normalizedType
         };
     }
 

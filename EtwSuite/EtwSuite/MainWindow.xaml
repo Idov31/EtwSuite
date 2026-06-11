@@ -45,10 +45,6 @@
                 Grid.Column="1"
                 Orientation="Horizontal"
                 Spacing="12">
-                <controls:CheckBox
-                    VerticalAlignment="Bottom"
-                    Content="Show missing providers"
-                    IsChecked="{Binding ShowMissingProviders, Mode=TwoWay}" />
                 <controls:TextBox
                     Width="360"
                     Header="Search"
@@ -64,8 +60,18 @@
                 <ColumnDefinition Width="2*" />
                 <ColumnDefinition Width="3*" />
             </controls:Grid.ColumnDefinitions>
+            <controls:Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </controls:Grid.RowDefinitions>
+
+            <controls:CheckBox
+                Content="Show missing or providers with no events"
+                IsChecked="{Binding ShowMissingProviders, Mode=TwoWay}"
+                Margin="0,0,0,8" />
 
             <controls:ListView
+                Grid.Row="1"
                 ItemsSource="{Binding Providers}"
                 SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
                 SelectionChanged="ProvidersListView_SelectionChanged"
@@ -88,6 +94,7 @@
 
             <controls:Grid
                 Grid.Column="1"
+                Grid.RowSpan="2"
                 Padding="4"
                 DataContext="{Binding SelectedProviderDetails}"
                 RowSpacing="16">
@@ -142,7 +149,6 @@
                     RowSpacing="8">
                     <controls:Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </controls:Grid.RowDefinitions>
 
@@ -151,47 +157,50 @@
                         PlaceholderText="Event, task, id, opcode, level, parameter, or type"
                         TextChanged="SchemaSearchTextBox_TextChanged" />
 
-                    <controls:Grid
-                        Grid.Row="1"
-                        Padding="40,0,12,4"
-                        ColumnSpacing="12">
-                        <controls:Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2*" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </controls:Grid.ColumnDefinitions>
-                        <controls:TextBlock
-                            FontWeight="SemiBold"
-                            Text="Name" />
-                        <controls:TextBlock
-                            Grid.Column="1"
-                            FontWeight="SemiBold"
-                            Text="ID" />
-                        <controls:TextBlock
-                            Grid.Column="2"
-                            FontWeight="SemiBold"
-                            Text="Version" />
-                        <controls:TextBlock
-                            Grid.Column="3"
-                            FontWeight="SemiBold"
-                            Text="Opcode" />
-                        <controls:TextBlock
-                            Grid.Column="4"
-                            FontWeight="SemiBold"
-                            Text="Level" />
-                    </controls:Grid>
-
                     <controls:ListView
-                        Grid.Row="2"
+                        Grid.Row="1"
                         ItemsSource="{Binding SchemaItems}"
                         SelectionMode="None">
+                        <controls:ListView.ItemContainerStyle>
+                            <Style TargetType="controls:ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </controls:ListView.ItemContainerStyle>
+                        <controls:ListView.Header>
+                            <controls:Grid Padding="48,8,12,8" ColumnSpacing="12">
+                                <controls:Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2*" />
+                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </controls:Grid.ColumnDefinitions>
+                                <controls:TextBlock
+                                    FontWeight="SemiBold"
+                                    Text="Name" />
+                                <controls:TextBlock
+                                    Grid.Column="1"
+                                    FontWeight="SemiBold"
+                                    Text="ID" />
+                                <controls:TextBlock
+                                    Grid.Column="2"
+                                    FontWeight="SemiBold"
+                                    Text="Version" />
+                                <controls:TextBlock
+                                    Grid.Column="3"
+                                    FontWeight="SemiBold"
+                                    Text="Opcode" />
+                                <controls:TextBlock
+                                    Grid.Column="4"
+                                    FontWeight="SemiBold"
+                                    Text="Level" />
+                            </controls:Grid>
+                        </controls:ListView.Header>
                         <controls:ListView.ItemTemplate>
                             <DataTemplate>
-                                <controls:Expander>
+                                <controls:Expander HorizontalAlignment="Stretch">
                                     <controls:Expander.Header>
-                                        <controls:Grid ColumnSpacing="12">
+                                        <controls:Grid ColumnSpacing="12" HorizontalAlignment="Stretch">
                                             <controls:Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="2*" />
                                                 <ColumnDefinition Width="80" />
