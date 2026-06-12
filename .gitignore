@@ -5,9 +5,8 @@
 
 # Private dirs
 .*/
-!.github/
+!.agents
 !.github/workflows/
-*.md
 !README.md
 !docs/
 !docs/event-sql-filtering.md
