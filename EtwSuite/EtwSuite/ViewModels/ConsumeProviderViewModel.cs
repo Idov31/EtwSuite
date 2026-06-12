@@ -22,7 +22,6 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     private EtwProviderInfo? _selectedProvider;
     private string _searchText = string.Empty;
     private string _eventFilterText = string.Empty;
-    private EtwFilterMode _providerSearchFilterMode = EtwFilterMode.Basic;
     private EtwFilterMode _selectedEventFilterMode = EtwFilterMode.Basic;
     private string? _statusMessage = "Select a provider to start consuming.";
     private EtwTraceSessionState _state = EtwTraceSessionState.Stopped;
@@ -41,7 +40,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
     public ObservableCollection<LiveEventViewModel> Events { get; } = new();
 
-    public IReadOnlyList<EtwFilterMode> FilterModes { get; } = new[] { EtwFilterMode.Basic, EtwFilterMode.SQL };
+    public IReadOnlyList<EtwFilterMode> EventFilterModes { get; } = new[] { EtwFilterMode.Basic, EtwFilterMode.SQL };
 
     public IReadOnlyList<string> ExportFormats { get; } = new[] { "JSON", "CSV" };
 
@@ -74,18 +73,6 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         set
         {
             if (SetProperty(ref _searchText, value))
-            {
-                ApplyProviderFilter();
-            }
-        }
-    }
-
-    public EtwFilterMode ProviderSearchFilterMode
-    {
-        get => _providerSearchFilterMode;
-        set
-        {
-            if (SetProperty(ref _providerSearchFilterMode, value))
             {
                 ApplyProviderFilter();
             }
@@ -539,15 +526,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     {
         EtwProviderInfo? previousSelection = SelectedProvider;
         EtwCompiledFilter<EtwProviderInfo> searchFilter =
-            EtwFilterCompiler.CompileProviderFilter(ProviderSearchFilterMode, SearchText);
-        if (searchFilter.ErrorMessage is not null)
-        {
-            StatusMessage = $"Provider filter: {searchFilter.ErrorMessage}";
-        }
-        else
-        {
-            ClearFilterError("Provider filter:");
-        }
+            EtwFilterCompiler.CompileProviderFilter(EtwFilterMode.Basic, SearchText);
 
         IEnumerable<EtwProviderInfo> filteredProviders = _allProviders;
         filteredProviders = filteredProviders.Where(searchFilter.Matches);

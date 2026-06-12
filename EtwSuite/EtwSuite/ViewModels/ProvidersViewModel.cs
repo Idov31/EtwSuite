@@ -11,7 +11,6 @@ public sealed class ProvidersViewModel : ObservableObject
     private EtwProviderInfo? _selectedProvider;
     private ProviderDetailsViewModel? _selectedProviderDetails;
     private string _searchText = string.Empty;
-    private EtwFilterMode _selectedSearchFilterMode = EtwFilterMode.Basic;
     private string? _errorMessage;
     private bool _isLoading;
     private bool _showMissingProviders;
@@ -23,8 +22,6 @@ public sealed class ProvidersViewModel : ObservableObject
     }
 
     public ObservableCollection<EtwProviderInfo> Providers { get; } = new();
-
-    public IReadOnlyList<EtwFilterMode> FilterModes { get; } = new[] { EtwFilterMode.Basic, EtwFilterMode.SQL };
 
     public EtwProviderInfo? SelectedProvider
     {
@@ -50,18 +47,6 @@ public sealed class ProvidersViewModel : ObservableObject
         set
         {
             if (SetProperty(ref _searchText, value))
-            {
-                ApplyFilter();
-            }
-        }
-    }
-
-    public EtwFilterMode SelectedSearchFilterMode
-    {
-        get => _selectedSearchFilterMode;
-        set
-        {
-            if (SetProperty(ref _selectedSearchFilterMode, value))
             {
                 ApplyFilter();
             }
@@ -170,10 +155,7 @@ public sealed class ProvidersViewModel : ObservableObject
     {
         EtwProviderInfo? previousSelection = SelectedProvider;
         EtwCompiledFilter<EtwProviderInfo> searchFilter =
-            EtwFilterCompiler.CompileProviderFilter(SelectedSearchFilterMode, SearchText);
-        ErrorMessage = searchFilter.ErrorMessage is null
-            ? null
-            : $"Provider filter: {searchFilter.ErrorMessage}";
+            EtwFilterCompiler.CompileProviderFilter(EtwFilterMode.Basic, SearchText);
 
         IEnumerable<EtwProviderInfo> filteredProviders = _allProviders;
         if (!ShowMissingProviders)

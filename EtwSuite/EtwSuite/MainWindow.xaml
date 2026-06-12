@@ -80,11 +80,6 @@
                         Orientation="Horizontal"
                         Spacing="12"
                         Margin="0,0,0,8">
-                        <controls:ComboBox
-                            MinWidth="92"
-                            Header="Mode"
-                            ItemsSource="{Binding FilterModes}"
-                            SelectedItem="{Binding SelectedSearchFilterMode, Mode=TwoWay}" />
                         <controls:TextBox
                             x:Name="ProviderSearchTextBox"
                             MinWidth="260"
@@ -313,7 +308,6 @@
                     ColumnSpacing="12"
                     RowSpacing="8">
                     <controls:Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="320" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -326,42 +320,35 @@
                         <RowDefinition Height="Auto" />
                     </controls:Grid.RowDefinitions>
 
-                    <controls:ComboBox
-                        MinWidth="92"
-                        Header="Mode"
-                        ItemsSource="{Binding FilterModes}"
-                        SelectedItem="{Binding ProviderSearchFilterMode, Mode=TwoWay}" />
-
                     <controls:TextBox
                         x:Name="ConsumeProviderSearchTextBox"
-                        Grid.Column="1"
                         Header="Provider search"
                         PlaceholderText="Provider name or GUID"
                         KeyDown="ConsumeSearchTextBox_KeyDown"
                         TextChanged="ConsumeSearchTextBox_TextChanged" />
 
                     <controls:Button
-                        Grid.Column="2"
+                        Grid.Column="1"
                         VerticalAlignment="Bottom"
                         Click="StartStopConsumingButton_Click"
                         Content="{Binding StartStopText}" />
 
                     <controls:ComboBox
-                        Grid.Column="3"
+                        Grid.Column="2"
                         VerticalAlignment="Bottom"
                         Header="Export to"
                         ItemsSource="{Binding ExportFormats}"
                         SelectedItem="{Binding SelectedExportFormat, Mode=TwoWay}" />
 
                     <controls:Button
-                        Grid.Column="4"
+                        Grid.Column="3"
                         VerticalAlignment="Bottom"
                         Click="ExportEventsButton_Click"
                         Content="Export"
                         IsEnabled="{Binding HasEvents}" />
 
                     <controls:StackPanel
-                        Grid.Column="5"
+                        Grid.Column="4"
                         VerticalAlignment="Bottom"
                         Spacing="2">
                         <controls:TextBlock Text="{Binding TotalEventCountText}" />
@@ -373,7 +360,6 @@
                     <controls:ListView
                         x:Name="ConsumeProviderMatchesListView"
                         Grid.Row="1"
-                        Grid.Column="1"
                         MaxHeight="160"
                         Margin="0,8,0,0"
                         ItemsSource="{Binding Providers}"
@@ -405,7 +391,7 @@
 
                     <controls:TextBlock
                         Grid.Row="2"
-                        Grid.ColumnSpan="6"
+                        Grid.ColumnSpan="5"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Text="{Binding StatusMessage}"
                         TextWrapping="Wrap" />
@@ -422,7 +408,7 @@
                     <controls:ComboBox
                         MinWidth="92"
                         Header="Mode"
-                        ItemsSource="{Binding FilterModes}"
+                        ItemsSource="{Binding EventFilterModes}"
                         SelectedItem="{Binding SelectedEventFilterMode, Mode=TwoWay}" />
                     <controls:TextBox
                         x:Name="EventFilterTextBox"
