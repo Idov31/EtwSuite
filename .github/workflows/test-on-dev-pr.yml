@@ -1,0 +1,27 @@
+name: Test on Dev PR
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+      
+      - name: Restore dependencies
+        run: dotnet restore
+      
+      - name: Build
+        run: dotnet build --configuration Debug --no-restore
+      
+      - name: Run Tests
+        run: dotnet test EtwSuite.Tests --no-build --verbosity normal

@@ -5,8 +5,12 @@
 
 # Private dirs
 .*/
-*.md
+!.agents
+!.github/workflows/
 !README.md
+!docs/
+!docs/event-sql-filtering.md
+!docs/recordings.md
 
 # User-specific files
 *.rsuser

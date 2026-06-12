@@ -5,11 +5,12 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>EtwSuite</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>x86;x64;ARM64</Platforms>
-    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <ApplicationIcon>Assets\EtwSuite_Icon.ico</ApplicationIcon>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -19,8 +20,30 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="Assets\EtwSuite_Icon.ico" />
+    <None Remove="Assets\EtwSuite_Icon.png" />
+    <None Remove="Assets\EtwSuite_Logo.png" />
+    <Content Include="Assets\EtwSuite_Icon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\EtwSuite_Icon.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\EtwSuite_Logo.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="2.0.56" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.5" />
+    <PackageReference Include="Microsoft.O365.Security.Native.ETW" Version="4.4.9" />
+    <PackageReference Include="System.Management" Version="9.0.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)microsoft.o365.security.native.etw\4.4.9\runtimes\win-x64\native\Ijwhost.dll"
+          Link="runtimes\win-x64\lib\net8.0\Ijwhost.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(NuGetPackageRoot)microsoft.o365.security.native.etw\4.4.9\runtimes\win-arm64\native\Ijwhost.dll"
+          Link="runtimes\win-arm64\lib\net8.0\Ijwhost.dll"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
     <!-- Publish Properties -->

@@ -7,11 +7,14 @@ public sealed class ProvidersViewModel : ObservableObject
 {
     private readonly IEtwProviderCatalog _providerCatalog;
     private IReadOnlyList<EtwProviderInfo> _allProviders = Array.Empty<EtwProviderInfo>();
+    private readonly HashSet<Guid> _missingProviderIds = new();
     private EtwProviderInfo? _selectedProvider;
     private ProviderDetailsViewModel? _selectedProviderDetails;
     private string _searchText = string.Empty;
     private string? _errorMessage;
     private bool _isLoading;
+    private bool _showMissingProviders;
+    private long _schemaLoadVersion;
 
     public ProvidersViewModel(IEtwProviderCatalog providerCatalog)
     {
@@ -56,6 +59,18 @@ public sealed class ProvidersViewModel : ObservableObject
         private set => SetProperty(ref _errorMessage, value);
     }
 
+    public bool ShowMissingProviders
+    {
+        get => _showMissingProviders;
+        set
+        {
+            if (SetProperty(ref _showMissingProviders, value))
+            {
+                ApplyFilter();
+            }
+        }
+    }
+
     public bool IsLoading
     {
         get => _isLoading;
@@ -95,18 +110,62 @@ public sealed class ProvidersViewModel : ObservableObject
         }
     }
 
+    public async Task LoadSelectedProviderSchemaAsync(CancellationToken cancellationToken)
+    {
+        long loadVersion = Interlocked.Increment(ref _schemaLoadVersion);
+        EtwProviderInfo? provider = SelectedProvider;
+        ProviderDetailsViewModel? details = SelectedProviderDetails;
+        if (provider is null || details is null)
+        {
+            return;
+        }
+
+        details.BeginSchemaLoad();
+
+        try
+        {
+            EtwProviderSchema schema = await _providerCatalog.GetProviderSchemaAsync(provider, cancellationToken);
+            if (loadVersion == _schemaLoadVersion && SelectedProvider == provider && SelectedProviderDetails == details)
+            {
+                details.SetSchema(schema);
+                SetProviderMissing(provider, schema.Events.Count == 0);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (loadVersion == _schemaLoadVersion && SelectedProvider == provider && SelectedProviderDetails == details)
+            {
+                details.SetSchemaError(ex.Message);
+            }
+        }
+        finally
+        {
+            if (loadVersion == _schemaLoadVersion && SelectedProvider == provider && SelectedProviderDetails == details)
+            {
+                details.EndSchemaLoad();
+            }
+        }
+    }
+
     private void ApplyFilter()
     {
         EtwProviderInfo? previousSelection = SelectedProvider;
-        string searchText = SearchText.Trim();
+        EtwCompiledFilter<EtwProviderInfo> searchFilter =
+            EtwFilterCompiler.CompileProviderFilter(EtwFilterMode.Basic, SearchText);
 
         IEnumerable<EtwProviderInfo> filteredProviders = _allProviders;
-        if (!string.IsNullOrWhiteSpace(searchText))
+        if (!ShowMissingProviders)
         {
             filteredProviders = filteredProviders.Where(provider =>
-                provider.Name.Contains(searchText, StringComparison.CurrentCultureIgnoreCase) ||
-                provider.Id.ToString("D").Contains(searchText, StringComparison.OrdinalIgnoreCase));
+                provider.SchemaSource != EtwProviderSchemaSource.Unknown &&
+                !_missingProviderIds.Contains(provider.Id));
         }
+
+        filteredProviders = filteredProviders.Where(searchFilter.Matches);
 
         Providers.Clear();
         foreach (EtwProviderInfo provider in filteredProviders)
@@ -120,5 +179,16 @@ public sealed class ProvidersViewModel : ObservableObject
 
         OnPropertyChanged(nameof(ProviderCountText));
     }
-}
 
+    private void SetProviderMissing(EtwProviderInfo provider, bool isMissing)
+    {
+        bool changed = isMissing
+            ? _missingProviderIds.Add(provider.Id)
+            : _missingProviderIds.Remove(provider.Id);
+
+        if (changed && !ShowMissingProviders)
+        {
+            ApplyFilter();
+        }
+    }
+}
