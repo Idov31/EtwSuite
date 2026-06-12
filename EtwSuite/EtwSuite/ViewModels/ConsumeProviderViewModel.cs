@@ -448,6 +448,25 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         SelectedProvider = Providers.FirstOrDefault();
     }
 
+    public void SelectProvider(EtwProviderInfo provider)
+    {
+        SearchText = provider.Name;
+        EtwProviderInfo? matchingProvider = Providers.FirstOrDefault(candidate => candidate.Id == provider.Id);
+        if (matchingProvider is null)
+        {
+            Providers.Insert(0, provider);
+            matchingProvider = provider;
+        }
+
+        SelectedProvider = matchingProvider;
+    }
+
+    public void ApplySavedEventFilter(EtwFilterMode filterMode, string filterText)
+    {
+        SelectedEventFilterMode = filterMode;
+        EventFilterText = filterText;
+    }
+
     public IReadOnlyList<LiveEventViewModel> GetEventSnapshot()
     {
         return _filteredEvents.Select(record => new LiveEventViewModel(record)).ToArray();

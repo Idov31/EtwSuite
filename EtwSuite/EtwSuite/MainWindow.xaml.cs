@@ -22,13 +22,20 @@ namespace EtwSuite
 
             var providerCatalog = new EtwProviderCatalog();
             var recordingReader = new TraceEventRecordingReader();
+            var sessionTemplateStore = new SqliteEtwSessionTemplateStore();
+            var sessionTemplateSettings = new FileEtwSessionTemplateSettings();
             ProvidersViewModel = new ProvidersViewModel(providerCatalog);
             ConsumeProviderViewModel = new ConsumeProviderViewModel(providerCatalog);
             OpenRecordingViewModel = new OpenRecordingViewModel(recordingReader);
+            SavedSessionsViewModel = new SavedSessionsViewModel(
+                sessionTemplateStore,
+                sessionTemplateSettings,
+                ConsumeProviderViewModel);
 
             ListProvidersView.DataContext = ProvidersViewModel;
             ConsumeProviderView.DataContext = ConsumeProviderViewModel;
             OpenRecordingView.DataContext = OpenRecordingViewModel;
+            SavedSessionsView.DataContext = SavedSessionsViewModel;
             ProvidersViewModel.PropertyChanged += ProvidersViewModel_PropertyChanged;
 
             Closed += MainWindow_Closed;
@@ -39,6 +46,8 @@ namespace EtwSuite
         public ConsumeProviderViewModel ConsumeProviderViewModel { get; }
 
         public OpenRecordingViewModel OpenRecordingViewModel { get; }
+
+        public SavedSessionsViewModel SavedSessionsViewModel { get; }
 
         private void SetWindowIcon()
         {
@@ -57,13 +66,14 @@ namespace EtwSuite
             {
                 await ProvidersViewModel.LoadProvidersAsync(_loadCancellation.Token);
                 await ConsumeProviderViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await SavedSessionsViewModel.InitializeAsync(_loadCancellation.Token);
             }
             catch (OperationCanceledException)
             {
             }
         }
 
-        private void Root_SelectionChanged(
+        private async void Root_SelectionChanged(
             NavigationView sender,
             NavigationViewSelectionChangedEventArgs args)
         {
@@ -71,6 +81,11 @@ namespace EtwSuite
             ListProvidersView.Visibility = tag == "ListProviders" ? Visibility.Visible : Visibility.Collapsed;
             ConsumeProviderView.Visibility = tag == "ConsumeProvider" ? Visibility.Visible : Visibility.Collapsed;
             OpenRecordingView.Visibility = tag == "OpenRecording" ? Visibility.Visible : Visibility.Collapsed;
+            SavedSessionsView.Visibility = tag == "SavedSessions" ? Visibility.Visible : Visibility.Collapsed;
+            if (tag == "SavedSessions" && !SavedSessionsViewModel.HasDatabase)
+            {
+                await PromptForSavedSessionsDatabaseAsync();
+            }
         }
 
         private async void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -156,6 +171,19 @@ namespace EtwSuite
             }
         }
 
+        private void ConsumeProviderFromListFlyoutItem_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not EtwProviderInfo provider)
+            {
+                return;
+            }
+
+            ConsumeProviderViewModel.SelectProvider(provider);
+            Root.SelectedItem = ConsumeProviderNavigationItem;
+            UpdateConsumeProviderSearchText();
+            UpdateConsumeProviderMatchesVisibility();
+        }
+
         private void ConsumeSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             ConsumeProviderViewModel.SearchText = ((TextBox)sender).Text;
@@ -202,6 +230,7 @@ namespace EtwSuite
                         nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
                         etlPath = ShowSaveDialog(
                             ownerHandle,
+                            "Record ETL",
                             ConsumeProviderViewModel.GetDefaultEtlRecordingFileName(),
                             ".etl",
                             "ETL");
@@ -284,6 +313,59 @@ namespace EtwSuite
             OpenRecordingViewModel.GoToNextPage();
         }
 
+        private async void CreateSavedSessionsDatabaseButton_Click(object sender, RoutedEventArgs e)
+        {
+            await CreateSavedSessionsDatabaseAsync();
+        }
+
+        private async void OpenSavedSessionsDatabaseButton_Click(object sender, RoutedEventArgs e)
+        {
+            await OpenSavedSessionsDatabaseAsync();
+        }
+
+        private async void SaveCurrentSessionButton_Click(object sender, RoutedEventArgs e)
+        {
+            string? name = await PromptForTemplateNameAsync(SavedSessionsViewModel.DefaultTemplateName);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
+
+            await SavedSessionsViewModel.SaveCurrentSessionAsync(name, _loadCancellation.Token);
+        }
+
+        private void LoadSavedSessionButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!SavedSessionsViewModel.TryLoadSelectedSession())
+            {
+                return;
+            }
+
+            Root.SelectedItem = ConsumeProviderNavigationItem;
+            UpdateConsumeProviderSearchText();
+            EventFilterTextBox.Text = ConsumeProviderViewModel.EventFilterText;
+            UpdateConsumeProviderMatchesVisibility();
+        }
+
+        private async void DeleteSavedSessionButton_Click(object sender, RoutedEventArgs e)
+        {
+            SavedSessionTemplateViewModel? selectedTemplate = SavedSessionsViewModel.SelectedTemplate;
+            if (selectedTemplate is null)
+            {
+                return;
+            }
+
+            bool confirmed = await ConfirmAsync(
+                "Delete saved session?",
+                $"Delete '{selectedTemplate.Name}'?");
+            if (!confirmed)
+            {
+                return;
+            }
+
+            await SavedSessionsViewModel.DeleteSelectedSessionAsync(_loadCancellation.Token);
+        }
+
         private void EventsPerPageTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (int.TryParse(((TextBox)sender).Text, out int eventsPerPage))
@@ -310,7 +392,7 @@ namespace EtwSuite
                 string format = ConsumeProviderViewModel.SelectedExportFormat.ToUpperInvariant();
                 string suggestedName = ConsumeProviderViewModel.GetDefaultExportFileName();
                 nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                string? selectedPath = ShowSaveDialog(ownerHandle, suggestedName, extension, format);
+                string? selectedPath = ShowSaveDialog(ownerHandle, "Export events", suggestedName, extension, format);
                 if (string.IsNullOrWhiteSpace(selectedPath))
                 {
                     return;
@@ -327,7 +409,126 @@ namespace EtwSuite
             }
         }
 
-        private static string? ShowSaveDialog(nint ownerHandle, string suggestedFileName, string extension, string format)
+        private async Task PromptForSavedSessionsDatabaseAsync()
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Saved sessions database",
+                Content = "Create a new SQLite database or open an existing saved sessions database.",
+                PrimaryButtonText = "Create",
+                SecondaryButtonText = "Open",
+                CloseButtonText = "Cancel",
+            };
+
+            ContentDialogResult result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                await CreateSavedSessionsDatabaseAsync();
+            }
+            else if (result == ContentDialogResult.Secondary)
+            {
+                await OpenSavedSessionsDatabaseAsync();
+            }
+        }
+
+        private async Task CreateSavedSessionsDatabaseAsync()
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? path = ShowSaveDialog(
+                    ownerHandle,
+                    "Create saved sessions database",
+                    "EtwSuite.SavedSessions.sqlite",
+                    ".sqlite",
+                    "SQLite");
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    await SavedSessionsViewModel.OpenDatabaseAsync(path, remember: true, _loadCancellation.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SavedSessionsViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async Task OpenSavedSessionsDatabaseAsync()
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? path = ShowOpenDialog(
+                    ownerHandle,
+                    "Open saved sessions database",
+                    new[]
+                    {
+                        new ComDlgFilterSpec { Name = "SQLite database", Spec = "*.sqlite;*.sqlite3;*.db" },
+                        new ComDlgFilterSpec { Name = "All files", Spec = "*.*" },
+                    });
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    await SavedSessionsViewModel.OpenDatabaseAsync(path, remember: true, _loadCancellation.Token);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                SavedSessionsViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async Task<string?> PromptForTemplateNameAsync(string defaultName)
+        {
+            var nameTextBox = new TextBox
+            {
+                Header = "Name",
+                Text = defaultName,
+                SelectionStart = 0,
+                SelectionLength = defaultName.Length,
+            };
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Save current session",
+                Content = nameTextBox,
+                PrimaryButtonText = "Save",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+
+            ContentDialogResult result = await dialog.ShowAsync();
+            return result == ContentDialogResult.Primary ? nameTextBox.Text : null;
+        }
+
+        private async Task<bool> ConfirmAsync(string title, string content)
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = title,
+                Content = content,
+                PrimaryButtonText = "Delete",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+            };
+
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+
+        private static string? ShowSaveDialog(
+            nint ownerHandle,
+            string title,
+            string suggestedFileName,
+            string extension,
+            string format)
         {
             Type? dialogType = Type.GetTypeFromCLSID(new Guid("C0B4E2F3-BA21-4773-8DBA-335EC946EB8B"));
             if (dialogType is null)
@@ -342,7 +543,7 @@ namespace EtwSuite
             IShellItem? result = null;
             try
             {
-                dialog.SetTitle("Export events");
+                dialog.SetTitle(title);
                 dialog.SetFileName(suggestedFileName);
                 dialog.SetDefaultExtension(extension.TrimStart('.'));
                 dialog.SetOptions(FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.OverwritePrompt);
@@ -391,6 +592,23 @@ namespace EtwSuite
 
         private static string? ShowOpenDialog(nint ownerHandle)
         {
+            return ShowOpenDialog(
+                ownerHandle,
+                "Open recording",
+                new[]
+                {
+                    new ComDlgFilterSpec { Name = "Supported recordings", Spec = "*.etl;*.json;*.csv" },
+                    new ComDlgFilterSpec { Name = "ETL trace", Spec = "*.etl" },
+                    new ComDlgFilterSpec { Name = "EtwSuite exports", Spec = "*.json;*.csv" },
+                    new ComDlgFilterSpec { Name = "All files", Spec = "*.*" },
+                });
+        }
+
+        private static string? ShowOpenDialog(
+            nint ownerHandle,
+            string title,
+            ComDlgFilterSpec[] filterSpecs)
+        {
             Type? dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
             if (dialogType is null)
             {
@@ -404,17 +622,9 @@ namespace EtwSuite
             IShellItem? result = null;
             try
             {
-                dialog.SetTitle("Open recording");
+                dialog.SetTitle(title);
                 dialog.SetOptions(FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.FileMustExist);
-                dialog.SetFileTypes(
-                    4,
-                    new[]
-                    {
-                        new ComDlgFilterSpec { Name = "Supported recordings", Spec = "*.etl;*.json;*.csv" },
-                        new ComDlgFilterSpec { Name = "ETL trace", Spec = "*.etl" },
-                        new ComDlgFilterSpec { Name = "EtwSuite exports", Spec = "*.json;*.csv" },
-                        new ComDlgFilterSpec { Name = "All files", Spec = "*.*" },
-                    });
+                dialog.SetFileTypes((uint)filterSpecs.Length, filterSpecs);
 
                 int showResult = dialog.Show(ownerHandle);
                 if (showResult == unchecked((int)0x800704C7))

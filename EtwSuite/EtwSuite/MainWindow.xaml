@@ -61,6 +61,14 @@
                     <controls:FontIcon Glyph="&#xE8E5;" />
                 </controls:NavigationViewItem.Icon>
             </controls:NavigationViewItem>
+            <controls:NavigationViewItem
+                x:Name="SavedSessionsNavigationItem"
+                Content="Saved Sessions"
+                Tag="SavedSessions">
+                <controls:NavigationViewItem.Icon>
+                    <controls:FontIcon Glyph="&#xE8D3;" />
+                </controls:NavigationViewItem.Icon>
+            </controls:NavigationViewItem>
         </controls:NavigationView.MenuItems>
 
         <controls:Grid Padding="20">
@@ -127,6 +135,14 @@
                         <controls:ListView.ItemTemplate>
                             <DataTemplate>
                                 <controls:StackPanel Padding="4" Spacing="3">
+                                    <controls:StackPanel.ContextFlyout>
+                                        <controls:MenuFlyout>
+                                            <controls:MenuFlyoutItem
+                                                Click="ConsumeProviderFromListFlyoutItem_Click"
+                                                Tag="{Binding}"
+                                                Text="Consume this provider" />
+                                        </controls:MenuFlyout>
+                                    </controls:StackPanel.ContextFlyout>
                                     <controls:TextBlock
                                         FontWeight="SemiBold"
                                         Text="{Binding Name}"
@@ -837,6 +853,114 @@
                         </controls:ListView.ItemTemplate>
                     </controls:ListView>
                 </controls:Border>
+            </controls:Grid>
+
+            <controls:Grid
+                x:Name="SavedSessionsView"
+                RowSpacing="12"
+                Visibility="Collapsed">
+                <controls:Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </controls:Grid.RowDefinitions>
+
+                <controls:StackPanel Spacing="4">
+                    <controls:TextBlock
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        Text="Saved Sessions" />
+                    <controls:TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding DatabasePathText}"
+                        TextTrimming="CharacterEllipsis" />
+                    <controls:TextBlock
+                        Text="{Binding StatusMessage}"
+                        TextWrapping="Wrap" />
+                </controls:StackPanel>
+
+                <controls:StackPanel
+                    Grid.Row="1"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <controls:Button
+                        Click="CreateSavedSessionsDatabaseButton_Click"
+                        Content="Create database" />
+                    <controls:Button
+                        Click="OpenSavedSessionsDatabaseButton_Click"
+                        Content="Open database" />
+                    <controls:Button
+                        Click="SaveCurrentSessionButton_Click"
+                        Content="Save current session"
+                        IsEnabled="{Binding CanSaveCurrentSession}" />
+                    <controls:Button
+                        Click="LoadSavedSessionButton_Click"
+                        Content="Load"
+                        IsEnabled="{Binding CanLoadSelectedSession}" />
+                    <controls:Button
+                        Click="DeleteSavedSessionButton_Click"
+                        Content="Delete"
+                        IsEnabled="{Binding CanDeleteSelectedSession}" />
+                </controls:StackPanel>
+
+                <controls:Grid
+                    Grid.Row="2"
+                    Padding="12,8"
+                    ColumnSpacing="12"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <controls:Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="240" />
+                        <ColumnDefinition Width="360" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="160" />
+                    </controls:Grid.ColumnDefinitions>
+                    <controls:TextBlock FontWeight="SemiBold" Text="Name" />
+                    <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Provider" />
+                    <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Event filter" />
+                    <controls:TextBlock Grid.Column="3" FontWeight="SemiBold" Text="Updated" />
+                </controls:Grid>
+
+                <controls:ListView
+                    Grid.Row="3"
+                    ItemsSource="{Binding Templates}"
+                    SelectedItem="{Binding SelectedTemplate, Mode=TwoWay}"
+                    SelectionMode="Single">
+                    <controls:ListView.ItemContainerStyle>
+                        <Style TargetType="controls:ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </controls:ListView.ItemContainerStyle>
+                    <controls:ListView.ItemTemplate>
+                        <DataTemplate>
+                            <controls:Grid Padding="4,6" ColumnSpacing="12">
+                                <controls:Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="240" />
+                                    <ColumnDefinition Width="360" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="160" />
+                                </controls:Grid.ColumnDefinitions>
+                                <controls:TextBlock
+                                    FontWeight="SemiBold"
+                                    Text="{Binding Name}"
+                                    TextTrimming="CharacterEllipsis" />
+                                <controls:TextBlock
+                                    Grid.Column="1"
+                                    Text="{Binding Provider}"
+                                    TextTrimming="CharacterEllipsis" />
+                                <controls:TextBlock
+                                    Grid.Column="2"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{Binding FilterSummary}"
+                                    TextTrimming="CharacterEllipsis" />
+                                <controls:TextBlock
+                                    Grid.Column="3"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="{Binding UpdatedAt}" />
+                            </controls:Grid>
+                        </DataTemplate>
+                    </controls:ListView.ItemTemplate>
+                </controls:ListView>
             </controls:Grid>
         </controls:Grid>
     </controls:NavigationView>
