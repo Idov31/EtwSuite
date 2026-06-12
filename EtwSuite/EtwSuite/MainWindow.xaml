@@ -37,6 +37,14 @@
                     <controls:FontIcon Glyph="&#xE9D9;" />
                 </controls:NavigationViewItem.Icon>
             </controls:NavigationViewItem>
+            <controls:NavigationViewItem
+                x:Name="OpenRecordingNavigationItem"
+                Content="Open Recording"
+                Tag="OpenRecording">
+                <controls:NavigationViewItem.Icon>
+                    <controls:FontIcon Glyph="&#xE8E5;" />
+                </controls:NavigationViewItem.Icon>
+            </controls:NavigationViewItem>
         </controls:NavigationView.MenuItems>
 
         <controls:Grid Padding="20">
@@ -312,6 +320,8 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </controls:Grid.ColumnDefinitions>
                     <controls:Grid.RowDefinitions>
@@ -345,16 +355,33 @@
                         VerticalAlignment="Bottom"
                         Click="ExportEventsButton_Click"
                         Content="Export"
-                        IsEnabled="{Binding HasEvents}" />
+                        IsEnabled="{Binding CanExport}" />
+
+                    <controls:CheckBox
+                        Grid.Column="4"
+                        VerticalAlignment="Bottom"
+                        Content="Record ETL"
+                        IsChecked="{Binding IsEtlRecordingEnabled, Mode=TwoWay}" />
+
+                    <controls:Button
+                        Grid.Column="5"
+                        VerticalAlignment="Bottom"
+                        Click="OpenLastRecordingButton_Click"
+                        Content="Open recorded"
+                        IsEnabled="{Binding CanOpenLastRecording}" />
 
                     <controls:StackPanel
-                        Grid.Column="4"
+                        Grid.Column="6"
                         VerticalAlignment="Bottom"
                         Spacing="2">
                         <controls:TextBlock Text="{Binding TotalEventCountText}" />
                         <controls:TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Text="{Binding DroppedEventsText}" />
+                        <controls:TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{Binding EtlRecordingText}"
+                            TextTrimming="CharacterEllipsis" />
                     </controls:StackPanel>
 
                     <controls:ListView
@@ -391,7 +418,7 @@
 
                     <controls:TextBlock
                         Grid.Row="2"
-                        Grid.ColumnSpan="5"
+                        Grid.ColumnSpan="7"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Text="{Binding StatusMessage}"
                         TextWrapping="Wrap" />
@@ -443,6 +470,231 @@
                         Grid.Column="2"
                         VerticalAlignment="Bottom"
                         Click="NextEventsPageButton_Click"
+                        Content="Next"
+                        IsEnabled="{Binding CanGoToNextPage}" />
+                    <controls:StackPanel
+                        Grid.Column="3"
+                        VerticalAlignment="Bottom"
+                        Orientation="Horizontal"
+                        Spacing="12">
+                        <controls:TextBlock Text="{Binding PageStatusText}" />
+                        <controls:TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{Binding EventCountText}" />
+                    </controls:StackPanel>
+                </controls:Grid>
+
+                <controls:Border
+                    Grid.Row="4"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                    <controls:ListView
+                        ItemsSource="{Binding Events}"
+                        SelectionMode="None">
+                        <controls:ListView.ItemContainerStyle>
+                            <Style TargetType="controls:ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                            </Style>
+                        </controls:ListView.ItemContainerStyle>
+                        <controls:ListView.Header>
+                            <controls:Grid
+                                Padding="48,8,12,8"
+                                ColumnSpacing="12"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                <controls:Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="420" />
+                                    <ColumnDefinition Width="420" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="120" />
+                                </controls:Grid.ColumnDefinitions>
+                                <controls:TextBlock FontWeight="SemiBold" Text="Time" />
+                                <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Provider" />
+                                <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Event" />
+                                <controls:TextBlock Grid.Column="3" FontWeight="SemiBold" Text="ID" />
+                                <controls:TextBlock Grid.Column="4" FontWeight="SemiBold" Text="Version" />
+                                <controls:TextBlock Grid.Column="5" FontWeight="SemiBold" Text="Opcode" />
+                                <controls:TextBlock Grid.Column="6" FontWeight="SemiBold" Text="Level" />
+                                <controls:TextBlock Grid.Column="7" FontWeight="SemiBold" Text="PID" />
+                                <controls:TextBlock Grid.Column="8" FontWeight="SemiBold" Text="Process" />
+                                <controls:TextBlock Grid.Column="9" FontWeight="SemiBold" Text="Parameters" />
+                            </controls:Grid>
+                        </controls:ListView.Header>
+                        <controls:ListView.ItemTemplate>
+                            <DataTemplate>
+                                <controls:Expander
+                                    HorizontalContentAlignment="Stretch"
+                                    HorizontalAlignment="Stretch">
+                                    <controls:Expander.Header>
+                                        <controls:Grid
+                                            MinHeight="36"
+                                            Padding="33,6,12,6"
+                                            ColumnSpacing="12"
+                                            HorizontalAlignment="Stretch">
+                                            <controls:Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="100" />
+                                                <ColumnDefinition Width="420" />
+                                                <ColumnDefinition Width="420" />
+                                                <ColumnDefinition Width="64" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="72" />
+                                                <ColumnDefinition Width="64" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="120" />
+                                            </controls:Grid.ColumnDefinitions>
+                                            <controls:TextBlock IsTextSelectionEnabled="True" Text="{Binding Time}" />
+                                            <controls:TextBlock Grid.Column="1" IsTextSelectionEnabled="True" Text="{Binding Provider}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" IsTextSelectionEnabled="True" Text="{Binding Event}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="3" IsTextSelectionEnabled="True" Text="{Binding Id}" />
+                                            <controls:TextBlock Grid.Column="4" IsTextSelectionEnabled="True" Text="{Binding Version}" />
+                                            <controls:TextBlock Grid.Column="5" IsTextSelectionEnabled="True" Text="{Binding Opcode}" />
+                                            <controls:TextBlock Grid.Column="6" IsTextSelectionEnabled="True" Text="{Binding Level}" />
+                                            <controls:TextBlock Grid.Column="7" IsTextSelectionEnabled="True" Text="{Binding ProcessId}" />
+                                            <controls:TextBlock Grid.Column="8" IsTextSelectionEnabled="True" Text="{Binding ProcessName}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding ParameterSummary}" />
+                                        </controls:Grid>
+                                    </controls:Expander.Header>
+
+                                    <controls:Grid Padding="48,0,12,12" RowSpacing="6">
+                                        <controls:Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </controls:Grid.RowDefinitions>
+                                        <controls:Grid Padding="0,6,0,4" ColumnSpacing="12">
+                                            <controls:Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="260" />
+                                                <ColumnDefinition Width="*" />
+                                            </controls:Grid.ColumnDefinitions>
+                                            <controls:TextBlock FontWeight="SemiBold" Text="Name" />
+                                            <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Value" />
+                                        </controls:Grid>
+                                        <controls:ItemsControl Grid.Row="1" ItemsSource="{Binding Parameters}">
+                                            <controls:ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <controls:Grid Padding="0,3,0,3" ColumnSpacing="12">
+                                                        <controls:Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="260" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </controls:Grid.ColumnDefinitions>
+                                                        <controls:TextBlock IsTextSelectionEnabled="True" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                        <controls:TextBlock Grid.Column="1" IsTextSelectionEnabled="True" Text="{Binding Value}" TextTrimming="CharacterEllipsis" />
+                                                    </controls:Grid>
+                                                </DataTemplate>
+                                            </controls:ItemsControl.ItemTemplate>
+                                        </controls:ItemsControl>
+                                    </controls:Grid>
+                                </controls:Expander>
+                            </DataTemplate>
+                        </controls:ListView.ItemTemplate>
+                    </controls:ListView>
+                </controls:Border>
+            </controls:Grid>
+
+            <controls:Grid
+                x:Name="OpenRecordingView"
+                RowSpacing="12"
+                Visibility="Collapsed">
+                <controls:Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </controls:Grid.RowDefinitions>
+
+                <controls:StackPanel Spacing="4">
+                    <controls:TextBlock
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        Text="Open Recording" />
+                    <controls:TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding EventCountText}" />
+                    <controls:TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding DroppedEventsText}" />
+                </controls:StackPanel>
+
+                <controls:Grid
+                    Grid.Row="1"
+                    ColumnSpacing="12">
+                    <controls:Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </controls:Grid.ColumnDefinitions>
+
+                    <controls:Button
+                        VerticalAlignment="Bottom"
+                        Click="OpenRecordingFileButton_Click"
+                        Content="Open file"
+                        IsEnabled="{Binding CanOpenFile}" />
+                    <controls:StackPanel
+                        Grid.Column="1"
+                        Spacing="2">
+                        <controls:TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="{Binding SelectedFilePath}"
+                            TextTrimming="CharacterEllipsis" />
+                        <controls:TextBlock
+                            Text="{Binding StatusMessage}"
+                            TextWrapping="Wrap" />
+                    </controls:StackPanel>
+                </controls:Grid>
+
+                <controls:Grid
+                    Grid.Row="2"
+                    ColumnSpacing="12">
+                    <controls:Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </controls:Grid.ColumnDefinitions>
+
+                    <controls:ComboBox
+                        MinWidth="92"
+                        Header="Mode"
+                        ItemsSource="{Binding EventFilterModes}"
+                        SelectedItem="{Binding SelectedEventFilterMode, Mode=TwoWay}" />
+                    <controls:TextBox
+                        x:Name="OpenRecordingEventFilterTextBox"
+                        Grid.Column="1"
+                        Header="Event filter"
+                        PlaceholderText="Basic text/wildcards or SQL WHERE expression"
+                        TextChanged="OpenRecordingEventFilterTextBox_TextChanged" />
+                </controls:Grid>
+
+                <controls:Grid
+                    Grid.Row="3"
+                    ColumnSpacing="8">
+                    <controls:Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </controls:Grid.ColumnDefinitions>
+
+                    <controls:TextBox
+                        Width="120"
+                        Header="Events per page"
+                        Text="{Binding EventsPerPage, Mode=TwoWay}"
+                        TextChanged="OpenRecordingEventsPerPageTextBox_TextChanged" />
+                    <controls:Button
+                        Grid.Column="1"
+                        VerticalAlignment="Bottom"
+                        Click="OpenRecordingPreviousEventsPageButton_Click"
+                        Content="Previous"
+                        IsEnabled="{Binding CanGoToPreviousPage}" />
+                    <controls:Button
+                        Grid.Column="2"
+                        VerticalAlignment="Bottom"
+                        Click="OpenRecordingNextEventsPageButton_Click"
                         Content="Next"
                         IsEnabled="{Binding CanGoToNextPage}" />
                     <controls:StackPanel

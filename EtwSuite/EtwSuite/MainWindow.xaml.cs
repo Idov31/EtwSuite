@@ -20,11 +20,14 @@ namespace EtwSuite
             InitializeComponent();
 
             var providerCatalog = new EtwProviderCatalog();
+            var recordingReader = new TraceEventRecordingReader();
             ProvidersViewModel = new ProvidersViewModel(providerCatalog);
             ConsumeProviderViewModel = new ConsumeProviderViewModel(providerCatalog);
+            OpenRecordingViewModel = new OpenRecordingViewModel(recordingReader);
 
             ListProvidersView.DataContext = ProvidersViewModel;
             ConsumeProviderView.DataContext = ConsumeProviderViewModel;
+            OpenRecordingView.DataContext = OpenRecordingViewModel;
             ProvidersViewModel.PropertyChanged += ProvidersViewModel_PropertyChanged;
 
             Closed += MainWindow_Closed;
@@ -33,6 +36,8 @@ namespace EtwSuite
         public ProvidersViewModel ProvidersViewModel { get; }
 
         public ConsumeProviderViewModel ConsumeProviderViewModel { get; }
+
+        public OpenRecordingViewModel OpenRecordingViewModel { get; }
 
         private async void Root_Loaded(object sender, RoutedEventArgs e)
         {
@@ -55,6 +60,7 @@ namespace EtwSuite
             string? tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
             ListProvidersView.Visibility = tag == "ListProviders" ? Visibility.Visible : Visibility.Collapsed;
             ConsumeProviderView.Visibility = tag == "ConsumeProvider" ? Visibility.Visible : Visibility.Collapsed;
+            OpenRecordingView.Visibility = tag == "OpenRecording" ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private async void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -180,12 +186,92 @@ namespace EtwSuite
                 }
                 else
                 {
-                    await ConsumeProviderViewModel.StartAsync(_loadCancellation.Token);
+                    string? etlPath = null;
+                    if (ConsumeProviderViewModel.IsEtlRecordingEnabled)
+                    {
+                        nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                        etlPath = ShowSaveDialog(
+                            ownerHandle,
+                            ConsumeProviderViewModel.GetDefaultEtlRecordingFileName(),
+                            ".etl",
+                            "ETL");
+                        if (string.IsNullOrWhiteSpace(etlPath))
+                        {
+                            return;
+                        }
+
+                        ConsumeProviderViewModel.EtlRecordingPath = etlPath;
+                    }
+
+                    await ConsumeProviderViewModel.StartAsync(etlPath, _loadCancellation.Token);
                 }
             }
             catch (OperationCanceledException)
             {
             }
+        }
+
+        private async void OpenLastRecordingButton_Click(object sender, RoutedEventArgs e)
+        {
+            string? path = ConsumeProviderViewModel.LastRecordedEtlPath;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                Root.SelectedItem = OpenRecordingNavigationItem;
+                await OpenRecordingViewModel.OpenAsync(path, _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private async void OpenRecordingFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? selectedPath = ShowOpenDialog(ownerHandle);
+                if (string.IsNullOrWhiteSpace(selectedPath))
+                {
+                    return;
+                }
+
+                await OpenRecordingViewModel.OpenAsync(selectedPath, _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                OpenRecordingViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private void OpenRecordingEventFilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            OpenRecordingViewModel.EventFilterText = ((TextBox)sender).Text;
+        }
+
+        private void OpenRecordingEventsPerPageTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (int.TryParse(((TextBox)sender).Text, out int eventsPerPage))
+            {
+                OpenRecordingViewModel.EventsPerPage = eventsPerPage;
+            }
+        }
+
+        private void OpenRecordingPreviousEventsPageButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenRecordingViewModel.GoToPreviousPage();
+        }
+
+        private void OpenRecordingNextEventsPageButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenRecordingViewModel.GoToNextPage();
         }
 
         private void EventsPerPageTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -259,6 +345,65 @@ namespace EtwSuite
                             Name = $"{format} file",
                             Spec = $"*{extension}",
                         },
+                    });
+
+                int showResult = dialog.Show(ownerHandle);
+                if (showResult == unchecked((int)0x800704C7))
+                {
+                    return null;
+                }
+
+                Marshal.ThrowExceptionForHR(showResult);
+                dialog.GetResult(out result);
+                result.GetDisplayName(ShellItemDisplayName.FileSystemPath, out nint filePathPtr);
+                try
+                {
+                    return Marshal.PtrToStringUni(filePathPtr);
+                }
+                finally
+                {
+                    if (filePathPtr != nint.Zero)
+                    {
+                        Marshal.FreeCoTaskMem(filePathPtr);
+                    }
+                }
+            }
+            finally
+            {
+                if (result is not null)
+                {
+                    Marshal.ReleaseComObject(result);
+                }
+
+                Marshal.ReleaseComObject(dialog);
+            }
+        }
+
+        private static string? ShowOpenDialog(nint ownerHandle)
+        {
+            Type? dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
+            if (dialogType is null)
+            {
+                throw new InvalidOperationException("The file open dialog type could not be loaded.");
+            }
+
+            object dialogObject = Activator.CreateInstance(dialogType)
+                ?? throw new InvalidOperationException("Failed to create file open dialog.");
+            var dialog = (IFileDialog)dialogObject;
+
+            IShellItem? result = null;
+            try
+            {
+                dialog.SetTitle("Open recording");
+                dialog.SetOptions(FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.FileMustExist);
+                dialog.SetFileTypes(
+                    4,
+                    new[]
+                    {
+                        new ComDlgFilterSpec { Name = "Supported recordings", Spec = "*.etl;*.json;*.csv" },
+                        new ComDlgFilterSpec { Name = "ETL trace", Spec = "*.etl" },
+                        new ComDlgFilterSpec { Name = "EtwSuite exports", Spec = "*.json;*.csv" },
+                        new ComDlgFilterSpec { Name = "All files", Spec = "*.*" },
                     });
 
                 int showResult = dialog.Show(ownerHandle);
@@ -396,6 +541,7 @@ namespace EtwSuite
             OverwritePrompt = 0x00000002,
             PathMustExist = 0x00000800,
             ForceFileSystem = 0x00000040,
+            FileMustExist = 0x00001000,
         }
 
         internal enum ShellItemDisplayName : uint

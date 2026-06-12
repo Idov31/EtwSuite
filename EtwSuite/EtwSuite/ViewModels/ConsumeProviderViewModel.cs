@@ -18,6 +18,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     private readonly List<EtwLiveEventRecord> _filteredEvents = new();
     private IReadOnlyList<EtwProviderInfo> _allProviders = Array.Empty<EtwProviderInfo>();
     private IEtwLiveEventConsumer? _consumer;
+    private TraceEventEtlRecorder? _etlRecorder;
     private CancellationTokenSource? _consumeCancellation;
     private EtwProviderInfo? _selectedProvider;
     private string _searchText = string.Empty;
@@ -29,6 +30,9 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     private int _eventsPerPage = DefaultEventsPerPage;
     private int _currentPage = 1;
     private string _selectedExportFormat = "JSON";
+    private bool _isEtlRecordingEnabled;
+    private string? _etlRecordingPath;
+    private string? _lastRecordedEtlPath;
 
     public ConsumeProviderViewModel(IEtwProviderCatalog providerCatalog)
     {
@@ -42,13 +46,69 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
     public IReadOnlyList<EtwFilterMode> EventFilterModes { get; } = new[] { EtwFilterMode.Basic, EtwFilterMode.SQL };
 
-    public IReadOnlyList<string> ExportFormats { get; } = new[] { "JSON", "CSV" };
+    public IReadOnlyList<string> ExportFormats { get; } = new[] { "JSON", "CSV", "ETL" };
 
     public string SelectedExportFormat
     {
         get => _selectedExportFormat;
-        set => SetProperty(ref _selectedExportFormat, value);
+        set
+        {
+            if (SetProperty(ref _selectedExportFormat, value))
+            {
+                OnPropertyChanged(nameof(CanExport));
+            }
+        }
     }
+
+    public bool IsEtlRecordingEnabled
+    {
+        get => _isEtlRecordingEnabled;
+        set
+        {
+            if (SetProperty(ref _isEtlRecordingEnabled, value))
+            {
+                OnPropertyChanged(nameof(EtlRecordingText));
+            }
+        }
+    }
+
+    public string? EtlRecordingPath
+    {
+        get => _etlRecordingPath;
+        set
+        {
+            if (SetProperty(ref _etlRecordingPath, value))
+            {
+                OnPropertyChanged(nameof(EtlRecordingText));
+            }
+        }
+    }
+
+    public string? LastRecordedEtlPath
+    {
+        get => _lastRecordedEtlPath;
+        private set
+        {
+            if (SetProperty(ref _lastRecordedEtlPath, value))
+            {
+                OnPropertyChanged(nameof(CanOpenLastRecording));
+                OnPropertyChanged(nameof(CanExport));
+                OnPropertyChanged(nameof(EtlRecordingText));
+            }
+        }
+    }
+
+    public string EtlRecordingText => IsEtlRecordingEnabled
+        ? string.IsNullOrWhiteSpace(EtlRecordingPath)
+            ? "ETL recording enabled"
+            : State == EtwTraceSessionState.Running
+                ? $"Recording to {EtlRecordingPath}"
+                : LastRecordedEtlPath is not null
+                    ? $"Recorded to {LastRecordedEtlPath}"
+                    : $"ETL path: {EtlRecordingPath}"
+        : "ETL recording disabled";
+
+    public bool CanOpenLastRecording => !string.IsNullOrWhiteSpace(LastRecordedEtlPath) && File.Exists(LastRecordedEtlPath);
 
     public EtwProviderInfo? SelectedProvider
     {
@@ -119,6 +179,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
                 OnPropertyChanged(nameof(CanStart));
                 OnPropertyChanged(nameof(CanStop));
                 OnPropertyChanged(nameof(StartStopText));
+                OnPropertyChanged(nameof(EtlRecordingText));
             }
         }
     }
@@ -177,6 +238,9 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
     public bool HasEvents => _filteredEvents.Count > 0;
 
+    public bool CanExport => HasEvents ||
+        (string.Equals(SelectedExportFormat, "ETL", StringComparison.OrdinalIgnoreCase) && CanOpenLastRecording);
+
     public async Task LoadProvidersAsync(CancellationToken cancellationToken)
     {
         _allProviders = await _providerCatalog.EnumerateProvidersAsync(cancellationToken);
@@ -184,6 +248,11 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await StartAsync(null, cancellationToken);
+    }
+
+    public async Task StartAsync(string? etlRecordingPath, CancellationToken cancellationToken)
     {
         if (!CanStart || SelectedProvider is null)
         {
@@ -200,6 +269,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         OnPropertyChanged(nameof(EventCountText));
         OnPropertyChanged(nameof(TotalEventCountText));
         OnPropertyChanged(nameof(HasEvents));
+        OnPropertyChanged(nameof(CanExport));
         OnPropertyChanged(nameof(DroppedEventsText));
         OnPagingPropertiesChanged();
 
@@ -208,22 +278,53 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         _consumeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var consumer = new KrabsEtwLiveEventConsumer();
+        TraceEventEtlRecorder? etlRecorder = null;
         _consumer = consumer;
 
         try
         {
+            var enableOptions = new EtwProviderEnableOptions(SelectedProvider.Name, SelectedProvider.Id);
+            if (IsEtlRecordingEnabled)
+            {
+                string? path = !string.IsNullOrWhiteSpace(etlRecordingPath)
+                    ? etlRecordingPath
+                    : EtlRecordingPath;
+
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    throw new InvalidOperationException("Select an ETL recording path before starting.");
+                }
+
+                etlRecorder = new TraceEventEtlRecorder();
+                await etlRecorder.StartAsync(enableOptions, path, _consumeCancellation.Token);
+                _etlRecorder = etlRecorder;
+                EtlRecordingPath = path;
+                LastRecordedEtlPath = null;
+            }
+
             await consumer.StartAsync(
-                new EtwProviderEnableOptions(SelectedProvider.Name, SelectedProvider.Id),
+                enableOptions,
                 _consumeCancellation.Token);
 
             State = EtwTraceSessionState.Running;
-            StatusMessage = $"Consuming {SelectedProvider.Name}.";
+            StatusMessage = IsEtlRecordingEnabled && !string.IsNullOrWhiteSpace(EtlRecordingPath)
+                ? $"Consuming {SelectedProvider.Name} and recording ETL."
+                : $"Consuming {SelectedProvider.Name}.";
             _ = DrainEventsAsync(consumer, _consumeCancellation.Token);
         }
         catch (Exception ex)
         {
             State = EtwTraceSessionState.Failed;
             StatusMessage = ex.Message;
+            if (etlRecorder is not null)
+            {
+                await etlRecorder.DisposeAsync();
+                if (_etlRecorder == etlRecorder)
+                {
+                    _etlRecorder = null;
+                }
+            }
+
             await consumer.DisposeAsync();
             if (_consumer == consumer)
             {
@@ -245,11 +346,20 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         _consumeCancellation?.Cancel();
 
         IEtwLiveEventConsumer consumer = _consumer;
+        TraceEventEtlRecorder? etlRecorder = _etlRecorder;
         _consumer = null;
+        _etlRecorder = null;
         await consumer.DisposeAsync();
+        if (etlRecorder is not null)
+        {
+            await etlRecorder.DisposeAsync();
+            LastRecordedEtlPath = etlRecorder.FilePath;
+        }
 
         State = EtwTraceSessionState.Stopped;
-        StatusMessage = "Trace session stopped.";
+        StatusMessage = CanOpenLastRecording
+            ? $"Trace session stopped. ETL recorded to {LastRecordedEtlPath}."
+            : "Trace session stopped.";
     }
 
     public async ValueTask DisposeAsync()
@@ -259,6 +369,12 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         {
             await _consumer.DisposeAsync();
             _consumer = null;
+        }
+
+        if (_etlRecorder is not null)
+        {
+            await _etlRecorder.DisposeAsync();
+            _etlRecorder = null;
         }
 
         _consumeCancellation?.Dispose();
@@ -321,6 +437,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             OnPropertyChanged(nameof(EventCountText));
             OnPropertyChanged(nameof(TotalEventCountText));
             OnPropertyChanged(nameof(HasEvents));
+            OnPropertyChanged(nameof(CanExport));
             OnPropertyChanged(nameof(DroppedEventsText));
             OnPagingPropertiesChanged();
         });
@@ -350,6 +467,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         {
             "JSON" => CreateJson(events),
             "CSV" => CreateCsv(events),
+            "ETL" => string.Empty,
             _ => throw new NotSupportedException($"{SelectedExportFormat} export is not supported yet."),
         };
     }
@@ -370,6 +488,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         {
             "JSON" => ".json",
             "CSV" => ".csv",
+            "ETL" => ".etl",
             _ => throw new NotSupportedException($"{SelectedExportFormat} export is not supported yet."),
         };
     }
@@ -388,8 +507,37 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         return $"{providerToken}_{now:yyyyMMdd}_{now:HH}_{now:mm}{GetExportFileExtension()}";
     }
 
+    public string GetDefaultEtlRecordingFileName()
+    {
+        DateTimeOffset now = DateTimeOffset.Now;
+        string providerName = !string.IsNullOrWhiteSpace(SelectedProvider?.Name)
+            ? SanitizeFileNameComponent(SelectedProvider.Name)
+            : string.Empty;
+
+        string providerToken = string.IsNullOrWhiteSpace(providerName)
+            ? (SelectedProvider?.Id ?? Guid.Empty).ToString("D")
+            : providerName;
+
+        return $"{providerToken}_{now:yyyyMMdd}_{now:HH}_{now:mm}.etl";
+    }
+
     public async Task ExportAsync(string filePath, CancellationToken cancellationToken)
     {
+        if (string.Equals(SelectedExportFormat, "ETL", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!CanOpenLastRecording || string.IsNullOrWhiteSpace(LastRecordedEtlPath))
+            {
+                StatusMessage = "ETL export requires recording to ETL while consuming.";
+                return;
+            }
+
+            await using FileStream source = File.OpenRead(LastRecordedEtlPath);
+            await using FileStream destination = File.Create(filePath);
+            await source.CopyToAsync(destination, cancellationToken);
+            StatusMessage = $"Exported ETL recording to {filePath}.";
+            return;
+        }
+
         string content = CreateExportContent();
         if (string.IsNullOrEmpty(content))
         {
@@ -572,6 +720,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         RefreshCurrentPage();
         OnPropertyChanged(nameof(TotalEventCountText));
         OnPropertyChanged(nameof(HasEvents));
+        OnPropertyChanged(nameof(CanExport));
         OnPagingPropertiesChanged();
     }
 
