@@ -1,6 +1,6 @@
 # EtwSuite
 
-![EtwSuite logo](EtwSuite/EtwSuite/Assets/EtwSuite_Logo.png)
+![EtwSuite](images/EtwSuite_Logo_White_Background.png)
 
 ![C#](https://img.shields.io/badge/C%23-239120?style=for-the-badge&logo=csharp&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)
