@@ -64,6 +64,14 @@
                     <controls:FontIcon Glyph="&#xE8D3;" />
                 </controls:NavigationViewItem.Icon>
             </controls:NavigationViewItem>
+            <controls:NavigationViewItem
+                x:Name="HelpNavigationItem"
+                Content="Help"
+                Tag="Help">
+                <controls:NavigationViewItem.Icon>
+                    <controls:SymbolIcon Symbol="Help" />
+                </controls:NavigationViewItem.Icon>
+            </controls:NavigationViewItem>
         </controls:NavigationView.MenuItems>
 
         <controls:Grid Padding="20">
@@ -956,6 +964,312 @@
                         </DataTemplate>
                     </controls:ListView.ItemTemplate>
                 </controls:ListView>
+            </controls:Grid>
+
+            <controls:Grid
+                x:Name="HelpView"
+                RowSpacing="12"
+                Visibility="Collapsed">
+                <controls:Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </controls:Grid.RowDefinitions>
+
+                <controls:StackPanel Spacing="4">
+                    <controls:TextBlock
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        Text="Help" />
+                    <controls:TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Filtering, recording, and provider privilege notes."
+                        TextWrapping="Wrap" />
+                </controls:StackPanel>
+
+                <controls:ScrollViewer
+                    Grid.Row="1"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto">
+                    <controls:StackPanel
+                        MaxWidth="980"
+                        HorizontalAlignment="Left"
+                        Spacing="16">
+                        <controls:Border
+                            Padding="16"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:StackPanel Spacing="8">
+                                <controls:TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="Event filtering" />
+                                <controls:TextBlock
+                                    Text="Basic mode matches text case-insensitively across the relevant fields. When the text contains * or ?, EtwSuite treats it as a wildcard pattern."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    Text="SQL mode accepts a SQL-like boolean expression for captured events. It is an in-process expression parser, not database SQL: it does not query a database, call functions, or allow arbitrary member access."
+                                    TextWrapping="Wrap" />
+                            </controls:StackPanel>
+                        </controls:Border>
+
+                        <controls:Border
+                            Padding="16"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:StackPanel Spacing="8">
+                                <controls:TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="SQL syntax" />
+                                <controls:TextBlock
+                                    IsTextSelectionEnabled="True"
+                                    Text="The filter accepts an optional leading WHERE followed by a boolean expression."
+                                    TextWrapping="Wrap" />
+                                <controls:Grid
+                                    ColumnSpacing="12"
+                                    RowSpacing="4">
+                                    <controls:Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="2*" />
+                                        <ColumnDefinition Width="3*" />
+                                    </controls:Grid.ColumnDefinitions>
+                                    <controls:Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </controls:Grid.RowDefinitions>
+                                    <controls:TextBlock FontWeight="SemiBold" Text="Operator" />
+                                    <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Usage" />
+                                    <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Example" />
+                                    <controls:TextBlock Grid.Row="1" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="AND" />
+                                    <controls:TextBlock Grid.Row="1" Grid.Column="1" Text="Require both conditions." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="1" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="event_id = 1 AND level &lt;= 4" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="OR" />
+                                    <controls:TextBlock Grid.Row="2" Grid.Column="1" Text="Match either condition." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="2" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="event_id = 1 OR event_id = 2" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="3" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="NOT" />
+                                    <controls:TextBlock Grid.Row="3" Grid.Column="1" Text="Negate a condition." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="3" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="NOT process_name LIKE 'powershell%'" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="4" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="( )" />
+                                    <controls:TextBlock Grid.Row="4" Grid.Column="1" Text="Group conditions." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="4" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="(event_id = 1 OR event_id = 2) AND level &lt;= 4" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="5" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="=" />
+                                    <controls:TextBlock Grid.Row="5" Grid.Column="1" Text="Equal to." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="5" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="provider = 'Microsoft-Windows-Kernel-Process'" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="6" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="!=" />
+                                    <controls:TextBlock Grid.Row="6" Grid.Column="1" Text="Not equal to." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="6" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="process_name != 'svchost.exe'" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="7" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="&lt;&gt;" />
+                                    <controls:TextBlock Grid.Row="7" Grid.Column="1" Text="Not equal to." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="7" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="event_name &lt;&gt; 'Verbose'" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="8" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="&lt;" />
+                                    <controls:TextBlock Grid.Row="8" Grid.Column="1" Text="Less than." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="8" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="level &lt; 5" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="9" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="&lt;=" />
+                                    <controls:TextBlock Grid.Row="9" Grid.Column="1" Text="Less than or equal to." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="9" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="pid &lt;= 4242" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="10" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="&gt;" />
+                                    <controls:TextBlock Grid.Row="10" Grid.Column="1" Text="Greater than." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="10" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="thread_id &gt; 1000" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="11" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="&gt;=" />
+                                    <controls:TextBlock Grid.Row="11" Grid.Column="1" Text="Greater than or equal to." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="11" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="event_id &gt;= 10" TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="12" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="LIKE" />
+                                    <controls:TextBlock Grid.Row="12" Grid.Column="1" Text="Match a wildcard pattern." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="12" Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="payload.ImageName LIKE '*cmd.exe'" TextWrapping="Wrap" />
+                                </controls:Grid>
+                                <controls:TextBlock
+                                    IsTextSelectionEnabled="True"
+                                    Text="String values use single quotes. Escape a single quote by doubling it, for example: event_name = 'User''s Event'."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    IsTextSelectionEnabled="True"
+                                    Text="LIKE supports SQL wildcards and EtwSuite wildcards: % or * matches zero or more characters; _ or ? matches one character. Matching is case-insensitive."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    FontFamily="Consolas"
+                                    IsTextSelectionEnabled="True"
+                                    Text="WHERE provider LIKE 'Microsoft-Windows-*' AND event_id = 1"
+                                    TextWrapping="Wrap" />
+                            </controls:StackPanel>
+                        </controls:Border>
+
+                        <controls:Border
+                            Padding="16"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:StackPanel Spacing="8">
+                                <controls:TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="Fields / variables" />
+                                <controls:TextBlock
+                                    Text="SQL field names identify event properties. Numeric comparisons are supported for numeric fields such as event_id, level, pid, and thread_id."
+                                    TextWrapping="Wrap" />
+                                <controls:Grid
+                                    ColumnSpacing="12"
+                                    RowSpacing="4">
+                                    <controls:Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220" />
+                                        <ColumnDefinition Width="*" />
+                                    </controls:Grid.ColumnDefinitions>
+                                    <controls:Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </controls:Grid.RowDefinitions>
+                                    <controls:TextBlock FontWeight="SemiBold" Text="Field" />
+                                    <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Meaning" />
+                                    <controls:TextBlock Grid.Row="1" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="provider" />
+                                    <controls:TextBlock Grid.Row="1" Grid.Column="1" Text="Provider display name." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="provider_id" />
+                                    <controls:TextBlock Grid.Row="2" Grid.Column="1" Text="Provider GUID." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="3" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="event, event_name" />
+                                    <controls:TextBlock Grid.Row="3" Grid.Column="1" Text="Decoded event name when metadata is available." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="4" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="id, event_id" />
+                                    <controls:TextBlock Grid.Row="4" Grid.Column="1" Text="Numeric event identifier." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="5" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="version" />
+                                    <controls:TextBlock Grid.Row="5" Grid.Column="1" Text="Event version." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="6" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="opcode" />
+                                    <controls:TextBlock Grid.Row="6" Grid.Column="1" Text="Event opcode value or decoded name." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="7" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="level" />
+                                    <controls:TextBlock Grid.Row="7" Grid.Column="1" Text="Event severity or verbosity level." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="8" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="pid, process_id" />
+                                    <controls:TextBlock Grid.Row="8" Grid.Column="1" Text="Process ID associated with the event." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="9" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="process, process_name" />
+                                    <controls:TextBlock Grid.Row="9" Grid.Column="1" Text="Process name associated with the event, when resolved." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="10" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="tid, thread_id" />
+                                    <controls:TextBlock Grid.Row="10" Grid.Column="1" Text="Thread ID associated with the event." TextWrapping="Wrap" />
+                                </controls:Grid>
+                                <controls:Grid
+                                    ColumnSpacing="12"
+                                    RowSpacing="4">
+                                    <controls:Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="220" />
+                                        <ColumnDefinition Width="*" />
+                                    </controls:Grid.ColumnDefinitions>
+                                    <controls:Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </controls:Grid.RowDefinitions>
+                                    <controls:TextBlock Grid.Row="0" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="payload" />
+                                    <controls:TextBlock Grid.Row="0" Grid.Column="1" Text="Combined payload names, types, and values." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="1" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="payload.&lt;fieldName&gt;" />
+                                    <controls:TextBlock Grid.Row="1" Grid.Column="1" Text="One named payload field, for example payload.ImageName." TextWrapping="Wrap" />
+                                </controls:Grid>
+                            </controls:StackPanel>
+                        </controls:Border>
+
+                        <controls:Border
+                            Padding="16"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:StackPanel Spacing="8">
+                                <controls:TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="Recording types" />
+                                <controls:TextBlock
+                                    Text="Live consumption starts an ETW session for the selected provider and shows decoded events as they arrive."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    Text="JSON and CSV export write the currently captured event rows from EtwSuite."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    Text="ETL recording writes a native ETW trace file while consuming a provider. EtwSuite does not synthesize ETL files from already decoded rows."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    Text="Open Recording can load .etl, .json, and .csv files. ETL payload decoding is best-effort because provider metadata can be incomplete or unavailable."
+                                    TextWrapping="Wrap" />
+                            </controls:StackPanel>
+                        </controls:Border>
+
+                        <controls:Border
+                            Padding="16"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:StackPanel Spacing="8">
+                                <controls:TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="How to record ETL" />
+                                <controls:Grid
+                                    ColumnSpacing="12"
+                                    RowSpacing="6">
+                                    <controls:Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="32" />
+                                        <ColumnDefinition Width="*" />
+                                    </controls:Grid.ColumnDefinitions>
+                                    <controls:Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </controls:Grid.RowDefinitions>
+                                    <controls:TextBlock FontWeight="SemiBold" Text="1." />
+                                    <controls:TextBlock Grid.Column="1" Text="Open the Consume Provider tab." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="1" FontWeight="SemiBold" Text="2." />
+                                    <controls:TextBlock Grid.Row="1" Grid.Column="1" Text="Select the provider to consume." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="2" FontWeight="SemiBold" Text="3." />
+                                    <controls:TextBlock Grid.Row="2" Grid.Column="1" Text="Enable Record ETL." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="3" FontWeight="SemiBold" Text="4." />
+                                    <controls:TextBlock Grid.Row="3" Grid.Column="1" Text="Start consuming and choose the .etl destination path when prompted." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="4" FontWeight="SemiBold" Text="5." />
+                                    <controls:TextBlock Grid.Row="4" Grid.Column="1" Text="Stop consuming to close and flush the trace file." TextWrapping="Wrap" />
+                                    <controls:TextBlock Grid.Row="5" FontWeight="SemiBold" Text="6." />
+                                    <controls:TextBlock Grid.Row="5" Grid.Column="1" Text="Use Open recorded, or open the .etl file from the Open Recording tab." TextWrapping="Wrap" />
+                                </controls:Grid>
+                            </controls:StackPanel>
+                        </controls:Border>
+
+                        <controls:Border
+                            Padding="16"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:StackPanel Spacing="8">
+                                <controls:TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="Privileges" />
+                                <controls:TextBlock
+                                    Text="Some ETW operations require administrator privileges or tracing/logging group membership. EtwSuite does not automatically elevate."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    Text="Some providers, such as Microsoft-Windows-Kernel-Process, can require administrative privileges for recording."
+                                    TextWrapping="Wrap" />
+                                <controls:TextBlock
+                                    Text="Some protected providers, such as Microsoft-Windows-Threat-Intelligence, may require running as a Protected Process Light (PPL) signer that is allowed to collect those events."
+                                    TextWrapping="Wrap" />
+                            </controls:StackPanel>
+                        </controls:Border>
+                    </controls:StackPanel>
+                </controls:ScrollViewer>
             </controls:Grid>
         </controls:Grid>
     </controls:NavigationView>

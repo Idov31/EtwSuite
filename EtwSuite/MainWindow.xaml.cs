@@ -107,6 +107,7 @@ namespace EtwSuite
             ConsumeProviderView.Visibility = tag == "ConsumeProvider" ? Visibility.Visible : Visibility.Collapsed;
             OpenRecordingView.Visibility = tag == "OpenRecording" ? Visibility.Visible : Visibility.Collapsed;
             SavedSessionsView.Visibility = tag == "SavedSessions" ? Visibility.Visible : Visibility.Collapsed;
+            HelpView.Visibility = tag == "Help" ? Visibility.Visible : Visibility.Collapsed;
             if (tag == "SavedSessions" && !SavedSessionsViewModel.HasDatabase)
             {
                 await PromptForSavedSessionsDatabaseAsync();
