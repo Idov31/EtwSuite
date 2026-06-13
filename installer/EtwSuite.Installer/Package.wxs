@@ -14,7 +14,7 @@
     <Property Id="ApplicationFolderName" Value="EtwSuite" />
     <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
     <Property Id="ARPPRODUCTICON" Value="EtwSuiteIcon" />
-    <Icon Id="EtwSuiteIcon" SourceFile="..\..\EtwSuite\EtwSuite\Assets\EtwSuite_Icon.ico" />
+    <Icon Id="EtwSuiteIcon" SourceFile="..\..\EtwSuite\Assets\EtwSuite_Icon.ico" />
 
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="INSTALLFOLDER" Name="EtwSuite" />

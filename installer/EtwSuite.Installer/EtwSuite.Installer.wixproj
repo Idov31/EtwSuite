@@ -4,13 +4,13 @@
     <OutputName>EtwSuite-$(Platform)</OutputName>
     <ProductVersion>1.0.0</ProductVersion>
     <Cultures>en-US</Cultures>
-    <AppProject>..\..\EtwSuite\EtwSuite\EtwSuite.csproj</AppProject>
+    <AppProject>..\..\EtwSuite\EtwSuite.csproj</AppProject>
     <AppTargetFramework>net8.0-windows10.0.19041.0</AppTargetFramework>
     <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(Platform)' != 'ARM64'">win-x64</RuntimeIdentifier>
     <InstallerPlatform Condition="'$(Platform)' == 'ARM64'">arm64</InstallerPlatform>
     <InstallerPlatform Condition="'$(Platform)' != 'ARM64'">x64</InstallerPlatform>
-    <AppBuildOutputDir>$(MSBuildProjectDirectory)\..\..\EtwSuite\EtwSuite\bin\$(Platform)\$(Configuration)\$(AppTargetFramework)\$(RuntimeIdentifier)\</AppBuildOutputDir>
+    <AppBuildOutputDir>$(MSBuildProjectDirectory)\..\..\EtwSuite\bin\$(Platform)\$(Configuration)\$(AppTargetFramework)\$(RuntimeIdentifier)\</AppBuildOutputDir>
     <PublishDir>$(MSBuildProjectDirectory)\obj\publish\$(Configuration)\$(RuntimeIdentifier)</PublishDir>
     <LicenseRtf>$(MSBuildProjectDirectory)\obj\$(Platform)\$(Configuration)\LICENSE.rtf</LicenseRtf>
     <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
@@ -23,6 +23,8 @@
   <ItemGroup>
     <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
     <BindVariable Include="WixUILicenseRtf=$(LicenseRtf)" />
+    <BindVariable Include="WixUIDialogBmp=$(MSBuildProjectDirectory)\Assets\WixUIDialogBmp.bmp" />
+    <BindVariable Include="WixUIBannerBmp=$(MSBuildProjectDirectory)\Assets\WixUIBannerBmp.bmp" />
   </ItemGroup>
 
   <Target Name="GenerateLicenseRtf" BeforeTargets="BeforeBuild">

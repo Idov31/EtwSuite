@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <RestoreBuildInParallel>false</RestoreBuildInParallel>
+  </PropertyGroup>
+</Project>

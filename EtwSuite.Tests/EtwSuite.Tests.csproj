@@ -15,6 +15,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EtwSuite\EtwSuite\EtwSuite.csproj" />
+    <ProjectReference Include="..\EtwSuite\EtwSuite.csproj" />
   </ItemGroup>
 </Project>

@@ -64,18 +64,23 @@ See [docs/recordings.md](docs/recordings.md) for the current recording behavior.
 
 ## Basic Usage
 
-1. Open `EtwSuite.sln` in Visual Studio 2022.
-2. Build and run the `EtwSuite` WinUI project.
-3. Use `List Providers` to find a provider by name or GUID.
-4. Open `Consume Provider`, select a provider, choose level/keyword options,
+1. [Install](#installation) or [build](#build-from-source) EtwSuite and its dependencies.
+2. Use `List Providers` to find a provider by name or GUID.
+3. Open `Consume Provider`, select a provider, choose level/keyword options,
    and start consuming events.
-5. Use `Record ETL` if you want a native ETW recording.
-6. Use `Open Recording` to inspect `.etl`, `.json`, or `.csv` files later.
-7. Use `Saved Sessions` to persist provider and filter combinations in SQLite.
+4. Use `Record ETL` if you want a native ETW recording.
+5. Use `Open Recording` to inspect `.etl`, `.json`, or `.csv` files later.
+6. Use `Saved Sessions` to persist provider and filter combinations in SQLite.
 
 ## Setup
 
-### Requirements
+### Installation
+
+For installation, download the latest release and install the MSI for your architecture.
+
+### Build From Source
+
+#### Requirements
 
 - Windows 10 1809 or newer.
 - Visual Studio 2022 or newer with .NET desktop development support.
@@ -83,7 +88,7 @@ See [docs/recordings.md](docs/recordings.md) for the current recording behavior.
 - Windows App SDK build support.
 - The listed dependencies.
 
-### Dependencies
+#### Dependencies
 
 - [Microsoft.Diagnostics.Tracing.TraceEvent](https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent)
 - [Microsoft.O365.Security.Native.ETW](https://www.nuget.org/packages/Microsoft.O365.Security.Native.ETW)
@@ -92,7 +97,7 @@ See [docs/recordings.md](docs/recordings.md) for the current recording behavior.
 
 Some live ETW providers require administrator privileges or special system permissions (e.g. Microsoft-Windows-Threat-Intelligence). Basic provider browsing, saved sessions, and supported offline recording inspection should not require elevation.
 
-### Build
+#### Build Commands
 
 ```powershell
 dotnet build EtwSuite.sln

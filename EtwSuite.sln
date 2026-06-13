@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.37216.2
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EtwSuite", "EtwSuite\EtwSuite\EtwSuite.csproj", "{B2DA9D2B-F93A-4CBD-B8E0-24F3587CADC3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EtwSuite", "EtwSuite\EtwSuite.csproj", "{B2DA9D2B-F93A-4CBD-B8E0-24F3587CADC3}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EtwSuite.Tests", "EtwSuite.Tests\EtwSuite.Tests.csproj", "{DA804705-E2EE-4EAD-815F-98EF8F868B86}"
 EndProject
@@ -30,17 +30,11 @@ Global
 		{B2DA9D2B-F93A-4CBD-B8E0-24F3587CADC3}.Release|x86.ActiveCfg = Release|x86
 		{B2DA9D2B-F93A-4CBD-B8E0-24F3587CADC3}.Release|x86.Build.0 = Release|x86
 		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Debug|ARM64.ActiveCfg = Debug|x64
-		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Debug|ARM64.Build.0 = Debug|x64
 		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Debug|x64.ActiveCfg = Debug|x64
-		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Debug|x64.Build.0 = Debug|x64
 		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Debug|x86.ActiveCfg = Debug|x64
-		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Debug|x86.Build.0 = Debug|x64
 		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Release|ARM64.ActiveCfg = Release|x64
-		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Release|ARM64.Build.0 = Release|x64
 		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Release|x64.ActiveCfg = Release|x64
-		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Release|x64.Build.0 = Release|x64
 		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Release|x86.ActiveCfg = Release|x64
-		{DA804705-E2EE-4EAD-815F-98EF8F868B86}.Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
