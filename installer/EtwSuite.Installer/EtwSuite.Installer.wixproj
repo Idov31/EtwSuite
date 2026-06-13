@@ -1,0 +1,53 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>EtwSuite-$(Platform)</OutputName>
+    <ProductVersion>1.0.0</ProductVersion>
+    <Cultures>en-US</Cultures>
+    <AppProject>..\..\EtwSuite\EtwSuite.csproj</AppProject>
+    <AppTargetFramework>net8.0-windows10.0.19041.0</AppTargetFramework>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' != 'ARM64'">win-x64</RuntimeIdentifier>
+    <InstallerPlatform Condition="'$(Platform)' == 'ARM64'">arm64</InstallerPlatform>
+    <InstallerPlatform Condition="'$(Platform)' != 'ARM64'">x64</InstallerPlatform>
+    <AppBuildOutputDir>$(MSBuildProjectDirectory)\..\..\EtwSuite\bin\$(Platform)\$(Configuration)\$(AppTargetFramework)\$(RuntimeIdentifier)\</AppBuildOutputDir>
+    <PublishDir>$(MSBuildProjectDirectory)\obj\publish\$(Configuration)\$(RuntimeIdentifier)</PublishDir>
+    <LicenseRtf>$(MSBuildProjectDirectory)\obj\$(Platform)\$(Configuration)\LICENSE.rtf</LicenseRtf>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'AnyCPU'">
+    <Platform>x64</Platform>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
+    <BindVariable Include="WixUILicenseRtf=$(LicenseRtf)" />
+    <BindVariable Include="WixUIDialogBmp=$(MSBuildProjectDirectory)\Assets\WixUIDialogBmp.bmp" />
+    <BindVariable Include="WixUIBannerBmp=$(MSBuildProjectDirectory)\Assets\WixUIBannerBmp.bmp" />
+  </ItemGroup>
+
+  <Target Name="GenerateLicenseRtf" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\ConvertLicenseToRtf.ps1&quot; -InputPath &quot;$(MSBuildProjectDirectory)\..\..\LICENSE&quot; -OutputPath &quot;$(LicenseRtf)&quot;" />
+  </Target>
+
+  <Target Name="PublishEtwSuiteForMsi" BeforeTargets="BeforeBuild">
+    <MSBuild
+      Projects="$(AppProject)"
+      Targets="Publish"
+      Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishSingleFile=false;PublishTrimmed=false;PublishReadyToRun=true;PublishDir=$(PublishDir)\"
+      />
+  </Target>
+
+  <Target Name="CopyWinUIResourcesForMsi" AfterTargets="PublishEtwSuiteForMsi" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <AppXamlResources Include="$(AppBuildOutputDir)*.xbf" />
+      <AppXamlResources Include="$(AppBuildOutputDir)EtwSuite.pri" />
+    </ItemGroup>
+    <Error Condition="'@(AppXamlResources)' == ''" Text="No compiled WinUI resources were found in $(AppBuildOutputDir)." />
+    <Copy
+      SourceFiles="@(AppXamlResources)"
+      DestinationFolder="$(PublishDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
+</Project>

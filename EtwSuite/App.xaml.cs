@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -34,7 +35,47 @@ namespace EtwSuite
         /// </summary>
         public App()
         {
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+            UnhandledException += App_UnhandledException;
             InitializeComponent();
+        }
+
+        private static void CurrentDomain_UnhandledException(object sender, System.UnhandledExceptionEventArgs e)
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                WriteCrashLog(ex);
+            }
+        }
+
+        private static void App_UnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            WriteCrashLog(e.Exception);
+        }
+
+        private static void WriteCrashLog(Exception exception)
+        {
+            try
+            {
+                string logDirectory = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "EtwSuite",
+                    "Logs");
+                Directory.CreateDirectory(logDirectory);
+
+                string logPath = System.IO.Path.Combine(logDirectory, "crash.log");
+                var message = new StringBuilder()
+                    .AppendLine(DateTimeOffset.Now.ToString("O"))
+                    .AppendLine(exception.ToString())
+                    .AppendLine()
+                    .ToString();
+
+                File.AppendAllText(logPath, message);
+            }
+            catch
+            {
+                // Crash logging must never introduce a second startup failure.
+            }
         }
 
         /// <summary>

@@ -5,14 +5,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:media="using:Microsoft.UI.Xaml.Media"
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     mc:Ignorable="d"
     Title="EtwSuite">
-
-    <Window.SystemBackdrop>
-        <media:MicaBackdrop />
-    </Window.SystemBackdrop>
 
     <controls:NavigationView
         x:Name="Root"
