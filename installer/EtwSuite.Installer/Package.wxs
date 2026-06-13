@@ -1,0 +1,52 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+    Name="EtwSuite"
+    Manufacturer="Ido Veltzman"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="{2AA7F4CF-615D-49D4-9E39-167AA19F8A6D}"
+    Scope="perUserOrMachine">
+
+    <SummaryInformation Keywords="Installer" Description="EtwSuite MSI installer" Manufacturer="Ido Veltzman" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of EtwSuite is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ApplicationFolderName" Value="EtwSuite" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+    <Property Id="ARPPRODUCTICON" Value="EtwSuiteIcon" />
+    <Icon Id="EtwSuiteIcon" SourceFile="..\..\EtwSuite\EtwSuite\Assets\EtwSuite_Icon.ico" />
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="EtwSuite" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="EtwSuite" />
+    </StandardDirectory>
+
+    <Feature Id="ApplicationFeature" Title="EtwSuite" Level="1" Absent="disallow">
+      <Files Include="$(var.PublishDir)\**" Directory="INSTALLFOLDER" />
+    </Feature>
+
+    <Feature Id="StartMenuShortcutFeature" Title="Start Menu shortcut" Description="Create an EtwSuite shortcut in the Start Menu." Level="1" Absent="allow">
+      <ComponentRef Id="StartMenuShortcutComponent" />
+    </Feature>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="StartMenuShortcutComponent" Guid="{C5D52F36-3B89-40BC-A142-B1BEF508C9DD}">
+        <Shortcut
+          Id="StartMenuShortcut"
+          Directory="ApplicationProgramsFolder"
+          Name="EtwSuite"
+          Description="Launch EtwSuite"
+          Target="[INSTALLFOLDER]EtwSuite.exe"
+          WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKMU" Key="Software\EtwSuite" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <ui:WixUI Id="WixUI_Advanced" InstallDirectory="INSTALLFOLDER" />
+    <UIRef Id="WixUI_ErrorProgressText" />
+  </Package>
+</Wix>

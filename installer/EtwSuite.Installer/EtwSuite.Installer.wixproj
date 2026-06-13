@@ -1,0 +1,32 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>EtwSuite-$(Platform)</OutputName>
+    <ProductVersion>1.0.0</ProductVersion>
+    <Cultures>en-US</Cultures>
+    <AppProject>..\..\EtwSuite\EtwSuite\EtwSuite.csproj</AppProject>
+    <AppTargetFramework>net8.0-windows10.0.19041.0</AppTargetFramework>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' != 'ARM64'">win-x64</RuntimeIdentifier>
+    <InstallerPlatform Condition="'$(Platform)' == 'ARM64'">arm64</InstallerPlatform>
+    <InstallerPlatform Condition="'$(Platform)' != 'ARM64'">x64</InstallerPlatform>
+    <PublishDir>$(MSBuildProjectDirectory)\obj\publish\$(Configuration)\$(RuntimeIdentifier)</PublishDir>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'AnyCPU'">
+    <Platform>x64</Platform>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="7.0.0" />
+  </ItemGroup>
+
+  <Target Name="PublishEtwSuiteForMsi" BeforeTargets="BeforeBuild">
+    <MSBuild
+      Projects="$(AppProject)"
+      Targets="Publish"
+      Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=true;PublishSingleFile=false;PublishTrimmed=false;PublishReadyToRun=true;PublishDir=$(PublishDir)\"
+      />
+  </Target>
+</Project>

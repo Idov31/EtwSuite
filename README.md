@@ -104,6 +104,16 @@ Release build:
 dotnet build EtwSuite.sln -c Release
 ```
 
+Build MSI installers:
+
+```powershell
+dotnet build installer\EtwSuite.Installer\EtwSuite.Installer.wixproj -c Release -p:Platform=x64 -p:AcceptEula=wix7
+dotnet build installer\EtwSuite.Installer\EtwSuite.Installer.wixproj -c Release -p:Platform=ARM64 -p:AcceptEula=wix7
+```
+
+Only pass `AcceptEula=wix7` after confirming the WiX Toolset OSMF terms apply
+appropriately for your use.
+
 ### Test
 
 ```powershell
