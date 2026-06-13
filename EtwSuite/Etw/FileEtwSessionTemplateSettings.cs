@@ -3,9 +3,9 @@ using EtwSuite.Core;
 
 namespace EtwSuite.Etw;
 
-public sealed class FileEtwSessionTemplateSettings : IEtwSessionTemplateSettings
+public sealed class FileEtwSessionTemplateSettings(string settingsPath) : IEtwSessionTemplateSettings
 {
-    private readonly string _settingsPath;
+    private readonly string _settingsPath = settingsPath;
 
     public FileEtwSessionTemplateSettings()
         : this(Path.Combine(
@@ -13,11 +13,6 @@ public sealed class FileEtwSessionTemplateSettings : IEtwSessionTemplateSettings
             "EtwSuite",
             "settings.json"))
     {
-    }
-
-    public FileEtwSessionTemplateSettings(string settingsPath)
-    {
-        _settingsPath = settingsPath;
     }
 
     public async Task<string?> LoadDatabasePathAsync(CancellationToken cancellationToken)

@@ -145,6 +145,7 @@ public sealed class SqliteEtwSessionTemplateStore : IEtwSessionTemplateStore
         AddTemplateParameters(updateCommand, normalized);
         updateCommand.Parameters.AddWithValue("$id", normalized.Id);
         int changed = await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
         if (changed == 0)
         {
             throw new InvalidOperationException("The saved session no longer exists.");

@@ -1,24 +1,19 @@
-using System.Runtime.InteropServices;
-using System.Management;
-using System.Globalization;
-using System.Xml;
-using System.Xml.Linq;
 using EtwSuite.Core;
 using EtwSuite.Etw.Native;
 using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Session;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Management;
+using System.Runtime.InteropServices;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace EtwSuite.Etw;
 
-public sealed class EtwProviderEnumerationException : Exception
+public sealed class EtwProviderEnumerationException(uint errorCode) : Exception($"Failed to enumerate ETW providers. TDH returned Win32 error {errorCode}.")
 {
-    public EtwProviderEnumerationException(uint errorCode)
-        : base($"Failed to enumerate ETW providers. TDH returned Win32 error {errorCode}.")
-    {
-        ErrorCode = errorCode;
-    }
-
-    public uint ErrorCode { get; }
+    public uint ErrorCode { get; } = errorCode;
 }
 
 
@@ -40,6 +35,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
     {
         uint bufferSize = 0;
         uint result = TdhNative.TdhEnumerateProviders(IntPtr.Zero, ref bufferSize);
+
         if (result != TdhNative.ErrorInsufficientBuffer && result != TdhNative.ErrorSuccess)
         {
             throw new EtwProviderEnumerationException(result);
@@ -47,19 +43,25 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
         if (bufferSize == 0)
         {
-            return Array.Empty<EtwProviderInfo>();
+            return [];
         }
-
         IntPtr buffer = Marshal.AllocHGlobal(checked((int)bufferSize));
+
         try
         {
             result = TdhNative.TdhEnumerateProviders(buffer, ref bufferSize);
+
             if (result != TdhNative.ErrorSuccess)
             {
                 throw new EtwProviderEnumerationException(result);
             }
-
             var header = Marshal.PtrToStructure<TdhNative.ProviderEnumerationInfoHeader>(buffer);
+
+            if (header.NumberOfProviders == 0)
+            {
+                Marshal.FreeHGlobal(buffer);
+                return [];
+            }
             var providers = new List<EtwProviderInfo>(checked((int)header.NumberOfProviders));
             int headerSize = Marshal.SizeOf<TdhNative.ProviderEnumerationInfoHeader>();
             int providerInfoSize = Marshal.SizeOf<TdhNative.TraceProviderInfo>();
@@ -78,10 +80,9 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
                     MapSchemaSource(providerInfo.SchemaSource)));
             }
 
-            return providers
+            return [.. providers
                 .OrderBy(provider => provider.Name, StringComparer.CurrentCultureIgnoreCase)
-                .ThenBy(provider => provider.Id)
-                .ToArray();
+                .ThenBy(provider => provider.Id)];
         }
         finally
         {
@@ -91,7 +92,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
     private static string ReadProviderName(IntPtr buffer, uint providerNameOffset)
     {
-        if (providerNameOffset == 0)
+        if (buffer == IntPtr.Zero || providerNameOffset == 0)
         {
             return "(unknown provider)";
         }
@@ -115,18 +116,18 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         {
             return new EtwProviderSchema(
                 provider,
-                Array.Empty<EtwSchemaEvent>(),
-                new[] { "The provider schema source is unknown, so static event metadata is not available." });
+                [],
+                ["The provider schema source is unknown, so static event metadata is not available."]);
         }
-
         var diagnostics = new List<string>();
         EtwProviderSchema? manifestSchema = TryGetRegisteredManifestSchema(provider, diagnostics);
+
         if (manifestSchema is not null)
         {
             return manifestSchema;
         }
-
         EtwProviderSchema? wmiSchema = TryGetWmiSchema(provider, diagnostics, cancellationToken);
+
         if (wmiSchema is not null)
         {
             return wmiSchema;
@@ -135,21 +136,21 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         if (provider.SchemaSource is EtwProviderSchemaSource.Wpp or EtwProviderSchemaSource.TraceLogging)
         {
             diagnostics.Add($"{FormatSchemaSource(provider.SchemaSource)} providers usually do not expose a complete registered XML manifest. Event templates may require live event samples or external TMF/TraceLogging metadata.");
-            return new EtwProviderSchema(provider, Array.Empty<EtwSchemaEvent>(), diagnostics.Distinct(StringComparer.Ordinal).ToArray());
+            return new EtwProviderSchema(provider, [], [.. diagnostics.Distinct(StringComparer.Ordinal)]);
         }
+        List<TdhNative.EventDescriptor> eventDescriptors = EnumerateEventDescriptors(provider, diagnostics);
 
-        IReadOnlyList<TdhNative.EventDescriptor> eventDescriptors = EnumerateEventDescriptors(provider, diagnostics);
         if (eventDescriptors.Count == 0)
         {
             diagnostics.Add($"No static {FormatSchemaSource(provider.SchemaSource)} events were exposed by the registered manifest or TDH for this provider.");
         }
-
         var events = new List<EtwSchemaEvent>(eventDescriptors.Count);
-        foreach (TdhNative.EventDescriptor eventDescriptor in eventDescriptors)
+
+        foreach (var eventDescriptor in eventDescriptors)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
             EtwSchemaEvent? schemaEvent = TryReadEventInformation(provider, eventDescriptor, diagnostics);
+
             if (schemaEvent is not null)
             {
                 events.Add(schemaEvent);
@@ -158,12 +159,11 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
         return new EtwProviderSchema(
             provider,
-            events
+            [.. events
                 .OrderBy(schemaEvent => schemaEvent.Id)
                 .ThenBy(schemaEvent => schemaEvent.Version)
-                .ThenBy(schemaEvent => schemaEvent.Name, StringComparer.CurrentCultureIgnoreCase)
-                .ToArray(),
-            diagnostics.Distinct(StringComparer.Ordinal).ToArray());
+                .ThenBy(schemaEvent => schemaEvent.Name, StringComparer.CurrentCultureIgnoreCase)],
+            [.. diagnostics.Distinct(StringComparer.Ordinal)]);
     }
 
     private static EtwProviderSchema? TryGetRegisteredManifestSchema(
@@ -171,6 +171,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         List<string> diagnostics)
     {
         string? manifestXml;
+
         try
         {
             manifestXml = RegisteredTraceEventParser.GetManifestForRegisteredProvider(provider.Id);
@@ -189,10 +190,11 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         try
         {
             EtwProviderSchema schema = ParseRegisteredManifest(provider, manifestXml);
+
             if (schema.Events.Count == 0)
             {
                 diagnostics.Add("Registered manifest was found, but no event elements were parsed from it.");
-                return new EtwProviderSchema(provider, schema.Events, diagnostics.Distinct(StringComparer.Ordinal).ToArray());
+                return new EtwProviderSchema(provider, schema.Events, [.. diagnostics.Distinct(StringComparer.Ordinal)]);
             }
 
             return schema;
@@ -228,14 +230,14 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         {
             return new EtwProviderSchema(
                 provider,
-                Array.Empty<EtwSchemaEvent>(),
-                new[] { "Registered manifest did not contain a provider element." });
+                [],
+                ["Registered manifest did not contain a provider element."]);
         }
-
         Dictionary<string, string> tasksByValue = ReadValueNameMap(providerElement, "tasks", "task");
         Dictionary<string, string> opcodesByValue = ReadValueNameMap(providerElement, "opcodes", "opcode");
         Dictionary<string, string> levelsByValue = ReadValueNameMap(providerElement, "levels", "level");
         Dictionary<string, IReadOnlyList<EtwSchemaParameter>> templates = ReadTemplates(providerElement);
+
         if (templates.Count == 0)
         {
             templates = ReadTemplates(manifest.Root ?? providerElement);
@@ -245,6 +247,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         IEnumerable<XElement> eventElements = providerElement
             .Descendants()
             .Where(element => element.Name.LocalName == "event");
+
         if (!eventElements.Any())
         {
             eventElements = manifest
@@ -270,10 +273,10 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
                 version,
                 string.IsNullOrWhiteSpace(opcode) ? "0" : NormalizeManifestReference(opcode),
                 string.IsNullOrWhiteSpace(level) ? "0" : NormalizeManifestReference(level),
-                parameters ?? Array.Empty<EtwSchemaParameter>()));
+                parameters ?? []));
         }
 
-        return new EtwProviderSchema(provider, events, Array.Empty<string>());
+        return new EtwProviderSchema(provider, events, []);
     }
 
     private static XElement? FindProviderElement(XDocument manifest, EtwProviderInfo provider)
@@ -347,7 +350,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         return string.IsNullOrWhiteSpace(task) ? $"Event {id}" : task;
     }
 
-    private static string ResolveReference(string value, IReadOnlyDictionary<string, string> valueNameMap)
+    private static string ResolveReference(string value, Dictionary<string, string> valueNameMap)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -379,25 +382,25 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         List<string> diagnostics,
         CancellationToken cancellationToken)
     {
+        EtwProviderSchema? schema = null;
+
         try
         {
-            return GetWmiSchema(provider, cancellationToken);
+            schema = GetWmiSchema(provider, cancellationToken);
         }
         catch (ManagementException ex)
         {
             diagnostics.Add($"WMI/MOF metadata lookup failed: {ex.Message}");
-            return null;
         }
         catch (UnauthorizedAccessException ex)
         {
             diagnostics.Add($"WMI/MOF metadata access denied: {ex.Message}");
-            return null;
         }
         catch (InvalidOperationException ex)
         {
             diagnostics.Add($"WMI/MOF metadata lookup failed: {ex.Message}");
-            return null;
         }
+        return schema;
     }
 
     private static EtwProviderSchema? GetWmiSchema(
@@ -405,6 +408,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         CancellationToken cancellationToken)
     {
         ManagementClass? providerClass = FindWmiProviderClass(provider.Id, cancellationToken);
+
         if (providerClass is null)
         {
             return null;
@@ -461,7 +465,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
             return null;
         }
 
-        return new EtwProviderSchema(provider, events.Values.ToArray(), Array.Empty<string>());
+        return new EtwProviderSchema(provider, [.. events.Values], []);
     }
 
     private static ManagementClass? FindWmiProviderClass(Guid providerId, CancellationToken cancellationToken)
@@ -484,9 +488,10 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         return null;
     }
 
-    private static IReadOnlyList<EtwSchemaParameter> ReadWmiParameters(ManagementClass templateClass)
+    private static EtwSchemaParameter[] ReadWmiParameters(ManagementClass templateClass)
     {
         var parameters = new SortedDictionary<int, EtwSchemaParameter>();
+
         foreach (PropertyData property in templateClass.Properties)
         {
             int? wmiDataId = GetQualifierInt32(property, "wmidataid");
@@ -500,7 +505,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
                 MapWmiType(property.Type));
         }
 
-        return parameters.Values.ToArray();
+        return [.. parameters.Values];
     }
 
     private static string? GetQualifierString(ManagementClass owner, string qualifierName)
@@ -554,7 +559,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         }
     }
 
-    private static IReadOnlyList<TdhNative.EventDescriptor> EnumerateEventDescriptors(
+    private static List<TdhNative.EventDescriptor> EnumerateEventDescriptors(
         EtwProviderInfo provider,
         List<string> diagnostics)
     {
@@ -563,28 +568,29 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         uint result = TdhNative.TdhEnumerateManifestProviderEvents(ref providerId, IntPtr.Zero, ref bufferSize);
         if (result is TdhNative.ErrorNotFound or TdhNative.ErrorResourceNotPresent)
         {
-            return Array.Empty<TdhNative.EventDescriptor>();
+            return [];
         }
 
         if (result != TdhNative.ErrorInsufficientBuffer && result != TdhNative.ErrorSuccess)
         {
             diagnostics.Add($"TDH could not enumerate events for this provider. Win32 error: {result}.");
-            return Array.Empty<TdhNative.EventDescriptor>();
+            return [];
         }
 
         if (bufferSize == 0)
         {
-            return Array.Empty<TdhNative.EventDescriptor>();
+            return [];
         }
 
         IntPtr buffer = Marshal.AllocHGlobal(checked((int)bufferSize));
+
         try
         {
             result = TdhNative.TdhEnumerateManifestProviderEvents(ref providerId, buffer, ref bufferSize);
             if (result != TdhNative.ErrorSuccess)
             {
                 diagnostics.Add($"TDH could not read event descriptors for this provider. Win32 error: {result}.");
-                return Array.Empty<TdhNative.EventDescriptor>();
+                return [];
             }
 
             var header = Marshal.PtrToStructure<TdhNative.ProviderEventInfoHeader>(buffer);
@@ -633,6 +639,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         }
 
         IntPtr buffer = Marshal.AllocHGlobal(checked((int)bufferSize));
+
         try
         {
             result = TdhNative.TdhGetManifestEventInformation(ref providerId, ref descriptor, buffer, ref bufferSize);
@@ -667,16 +674,16 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
             eventDescriptor.Version,
             eventDescriptor.Opcode.ToString(),
             eventDescriptor.Level.ToString(),
-            Array.Empty<EtwSchemaParameter>());
+            []);
     }
 
-    private static IReadOnlyList<EtwSchemaParameter> ReadParameters(
+    private static List<EtwSchemaParameter> ReadParameters(
         IntPtr buffer,
         TdhNative.TraceEventInfoHeader header)
     {
         if (header.TopLevelPropertyCount == 0)
         {
-            return Array.Empty<EtwSchemaParameter>();
+            return [];
         }
 
         var parameters = new List<EtwSchemaParameter>(checked((int)header.TopLevelPropertyCount));

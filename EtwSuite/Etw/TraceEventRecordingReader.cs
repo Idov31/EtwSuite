@@ -9,7 +9,7 @@ namespace EtwSuite.Etw;
 
 public sealed class TraceEventRecordingReader : IEtwRecordingReader
 {
-    private const string UnsupportedMessage = "This file type is not supported yet. Supported: .etl, .json, .csv.";
+    private const string UnsupportedMessage = "This file type is not supported. The supported file types are: .etl, .json, .csv.";
 
     public EtwRecordingFormat DetectFormat(string filePath)
     {
@@ -54,7 +54,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
                 break;
             case EtwRecordingFormat.Json:
                 foreach (IReadOnlyList<EtwLiveEventRecord> batch in await Task.Run(
-                    () => ReadJson(filePath, batchSize, cancellationToken),
+                    () => ReadJson(filePath, batchSize, GetOptions(), cancellationToken),
                     cancellationToken))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -77,7 +77,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
         }
     }
 
-    private static IReadOnlyList<IReadOnlyList<EtwLiveEventRecord>> ReadEtl(
+    private static List<IReadOnlyList<EtwLiveEventRecord>> ReadEtl(
         string filePath,
         int batchSize,
         CancellationToken cancellationToken)
@@ -99,7 +99,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
                 batch.Add(CreateEvent(traceEvent));
                 if (batch.Count >= batchSize)
                 {
-                    batches.Add(batch.ToArray());
+                    batches.Add([.. batch]);
                     batch.Clear();
                 }
             };
@@ -117,7 +117,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
 
         if (batch.Count > 0)
         {
-            batches.Add(batch.ToArray());
+            batches.Add([.. batch]);
         }
 
         return batches;
@@ -128,24 +128,26 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
         return !string.Equals(providerName, "MSNT_SystemTrace", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<IReadOnlyList<EtwLiveEventRecord>> ReadJson(
+    private static JsonSerializerOptions GetOptions()
+    {
+        return new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+    }
+
+    private static List<IReadOnlyList<EtwLiveEventRecord>> ReadJson(
         string filePath,
         int batchSize,
-        CancellationToken cancellationToken)
+JsonSerializerOptions options, CancellationToken cancellationToken)
     {
         try
         {
             using FileStream stream = File.OpenRead(filePath);
             JsonExportEvent[]? events = JsonSerializer.Deserialize<JsonExportEvent[]>(
                 stream,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                options: options);
 
-            if (events is null)
-            {
-                throw new EtwRecordingException("The JSON recording is empty or incompatible.");
-            }
-
-            return ToBatches(events.Select(ToRecord), batchSize, cancellationToken);
+            return events is null
+                ? throw new EtwRecordingException("The JSON recording is empty or incompatible.")
+                : ToBatches(events.Select(ToRecord), batchSize, cancellationToken);
         }
         catch (EtwRecordingException)
         {
@@ -157,7 +159,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
         }
     }
 
-    private static IReadOnlyList<IReadOnlyList<EtwLiveEventRecord>> ReadCsv(
+    private static List<IReadOnlyList<EtwLiveEventRecord>> ReadCsv(
         string filePath,
         int batchSize,
         CancellationToken cancellationToken)
@@ -170,9 +172,9 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
                 throw new EtwRecordingException("The CSV recording is empty.");
             }
 
-            string[] header = ParseCsvLine(lines[0]).ToArray();
+            string[] header = [.. ParseCsvLine(lines[0])];
             string[] expectedHeader =
-            {
+            [
                 "Time",
                 "Provider",
                 "Event",
@@ -184,7 +186,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
                 "ProcessName",
                 "ThreadId",
                 "Parameters",
-            };
+            ];
 
             if (!header.SequenceEqual(expectedHeader, StringComparer.Ordinal))
             {
@@ -200,7 +202,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
                     continue;
                 }
 
-                string[] fields = ParseCsvLine(line).ToArray();
+                string[] fields = [.. ParseCsvLine(line)];
                 if (fields.Length != expectedHeader.Length)
                 {
                     throw new EtwRecordingException("The CSV recording has an invalid event row.");
@@ -238,7 +240,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
             ReadPayload(traceEvent));
     }
 
-    private static IReadOnlyList<EtwPayloadValue> ReadPayload(TraceEvent traceEvent)
+    private static List<EtwPayloadValue> ReadPayload(TraceEvent traceEvent)
     {
         var payload = new List<EtwPayloadValue>();
         foreach (string name in traceEvent.PayloadNames)
@@ -279,7 +281,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
             exportEvent.Parameters?.Select(parameter => new EtwPayloadValue(
                 parameter.Name ?? string.Empty,
                 parameter.Type ?? string.Empty,
-                parameter.Value ?? string.Empty)).ToArray() ?? Array.Empty<EtwPayloadValue>());
+                parameter.Value ?? string.Empty)).ToArray() ?? []);
     }
 
     private static EtwLiveEventRecord ToRecord(string[] fields)
@@ -296,7 +298,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
             ParseUInt32(fields[7]),
             fields[8],
             ParseUInt32(fields[9]),
-            new[] { new EtwPayloadValue("Parameters", "String", fields[10]) });
+            [new EtwPayloadValue("Parameters", "String", fields[10])]);
     }
 
     private static DateTimeOffset ParseExportTime(string? value)
@@ -329,7 +331,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
         return uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out uint result) ? result : 0;
     }
 
-    private static IReadOnlyList<IReadOnlyList<EtwLiveEventRecord>> ToBatches(
+    private static List<IReadOnlyList<EtwLiveEventRecord>> ToBatches(
         IEnumerable<EtwLiveEventRecord> records,
         int batchSize,
         CancellationToken cancellationToken)
@@ -342,20 +344,20 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
             batch.Add(record);
             if (batch.Count >= batchSize)
             {
-                batches.Add(batch.ToArray());
+                batches.Add([.. batch]);
                 batch.Clear();
             }
         }
 
         if (batch.Count > 0)
         {
-            batches.Add(batch.ToArray());
+            batches.Add([.. batch]);
         }
 
         return batches;
     }
 
-    private static IEnumerable<string> ParseCsvLine(string line)
+    private static List<string> ParseCsvLine(string line)
     {
         var fields = new List<string>();
         var builder = new StringBuilder();
@@ -364,6 +366,7 @@ public sealed class TraceEventRecordingReader : IEtwRecordingReader
         for (int index = 0; index < line.Length; index++)
         {
             char character = line[index];
+
             if (character == '"')
             {
                 if (inQuotes && index + 1 < line.Length && line[index + 1] == '"')

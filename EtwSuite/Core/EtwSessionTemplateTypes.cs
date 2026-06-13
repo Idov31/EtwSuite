@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace EtwSuite.Core;
 
 public sealed record EtwSessionTemplate(

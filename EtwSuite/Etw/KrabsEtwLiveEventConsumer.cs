@@ -186,7 +186,7 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
             && !value.StartsWith("Uncategorized", StringComparison.OrdinalIgnoreCase);
     }
 
-    private IReadOnlyList<EtwPayloadValue> ReadPayload(IEventRecord record)
+    private static List<EtwPayloadValue> ReadPayload(IEventRecord record)
     {
         var payload = new List<EtwPayloadValue>();
         foreach (Property property in record.Properties)
@@ -287,10 +287,9 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
 
     private static string CreateSessionName(EtwProviderEnableOptions options)
     {
-        string providerName = new string(options.ProviderName
+        string providerName = new([.. options.ProviderName
             .Where(character => char.IsLetterOrDigit(character) || character is '-' or '_')
-            .Take(48)
-            .ToArray());
+            .Take(48)]);
 
         if (string.IsNullOrWhiteSpace(providerName))
         {

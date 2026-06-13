@@ -75,10 +75,9 @@ public sealed class TraceEventEtlRecorder : IAsyncDisposable
 
     private static string CreateSessionName(EtwProviderEnableOptions options)
     {
-        string providerName = new string(options.ProviderName
+        string providerName = new([.. options.ProviderName
             .Where(character => char.IsLetterOrDigit(character) || character is '-' or '_')
-            .Take(42)
-            .ToArray());
+            .Take(42)]);
 
         if (string.IsNullOrWhiteSpace(providerName))
         {
