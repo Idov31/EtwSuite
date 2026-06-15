@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Principal;
+using System.Text;
 using System.Threading.Channels;
 using EtwSuite.Core;
 using Microsoft.O365.Security.ETW;
@@ -207,6 +209,13 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
             {
                 "WideString" => record.GetUnicodeString(name, string.Empty),
                 "AnsiString" => record.GetAnsiString(name, string.Empty),
+                "CountedString" or "ManifestCountedString" => ReadCountedString(record, name, wide: true, bigEndian: false),
+                "CountedAnsiString" or "ManifestCountedAnsiString" => ReadCountedString(record, name, wide: false, bigEndian: false),
+                "ReversedCountedString" => ReadCountedString(record, name, wide: true, bigEndian: true),
+                "ReversedCountedAnsiString" => ReadCountedString(record, name, wide: false, bigEndian: true),
+                "NonNullTerminatedString" or "UnicodeChar" => ReadNonNullTerminatedString(record, name, wide: true),
+                "NonNullTerminatedAnsiString" or "AnsiChar" => ReadNonNullTerminatedString(record, name, wide: false),
+                "ManifestCountedBinary" => ReadCountedBinary(record, name),
                 "Int8" => record.GetInt8(name, 0).ToString(CultureInfo.InvariantCulture),
                 "UInt8" => record.GetUInt8(name, 0).ToString(CultureInfo.InvariantCulture),
                 "Short" => record.GetInt16(name, 0).ToString(CultureInfo.InvariantCulture),
@@ -215,8 +224,15 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
                 "UInteger" => record.GetUInt32(name, 0).ToString(CultureInfo.InvariantCulture),
                 "Int64" => record.GetInt64(name, 0).ToString(CultureInfo.InvariantCulture),
                 "UInt64" => record.GetUInt64(name, 0).ToString(CultureInfo.InvariantCulture),
-                "Pointer" => ReadBestEffortValue(record, name),
-                "Binary" => Convert.ToHexString(record.GetBinary(name)),
+                "HexInt32" => FormatHex(record.GetUInt32(name, 0), 8),
+                "HexInt64" => FormatHex(record.GetUInt64(name, 0), 16),
+                "Pointer" or "SizeT" => ReadPointer(record, name),
+                "Float" => ReadFloat(record, name),
+                "Double" => ReadDouble(record, name),
+                "Boolean" => ReadBoolean(record, name),
+                "Guid" => ReadGuid(record, name),
+                "Sid" or "WbemSid" => ReadSid(record, name),
+                "Binary" or "HexDump" => Convert.ToHexString(record.GetBinary(name)),
                 "FileTime" or "SystemTime" => Convert
                     .ToDateTime(record.GetDateTime(name, DateTime.MinValue), CultureInfo.InvariantCulture)
                     .ToString("O", CultureInfo.InvariantCulture),
@@ -227,6 +243,120 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         {
             return string.Empty;
         }
+    }
+
+    private static string FormatHex(ulong value, int digits)
+    {
+        return "0x" + value.ToString("X" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    }
+
+    // Counted strings store a 16-bit byte count (little-endian, or big-endian for the reversed
+    // variants) followed by the character bytes. The field is not null-terminated, so it cannot be
+    // read with the null-terminated string getters. Field size is the byte count, not a character
+    // count.
+    private static string ReadCountedString(IEventRecord record, string name, bool wide, bool bigEndian)
+    {
+        if (!record.TryGetBinary(name, out byte[]? bytes) || bytes is not { Length: >= 2 })
+        {
+            return string.Empty;
+        }
+
+        int count = bigEndian
+            ? (bytes[0] << 8) | bytes[1]
+            : bytes[0] | (bytes[1] << 8);
+
+        // When the raw property bytes include the count prefix, the count matches the remaining
+        // byte length; otherwise the buffer is already just the character data.
+        ReadOnlySpan<byte> data = count == bytes.Length - 2 ? bytes.AsSpan(2, count) : bytes;
+        return DecodeString(data, wide);
+    }
+
+    private static string ReadNonNullTerminatedString(IEventRecord record, string name, bool wide)
+    {
+        return record.TryGetBinary(name, out byte[]? bytes) && bytes is { Length: > 0 }
+            ? DecodeString(bytes, wide)
+            : string.Empty;
+    }
+
+    private static string ReadCountedBinary(IEventRecord record, string name)
+    {
+        if (!record.TryGetBinary(name, out byte[]? bytes) || bytes is not { Length: >= 2 })
+        {
+            return string.Empty;
+        }
+
+        int count = bytes[0] | (bytes[1] << 8);
+        ReadOnlySpan<byte> data = count == bytes.Length - 2 ? bytes.AsSpan(2, count) : bytes;
+        return Convert.ToHexString(data);
+    }
+
+    private static string DecodeString(ReadOnlySpan<byte> data, bool wide)
+    {
+        string value = wide ? Encoding.Unicode.GetString(data) : Encoding.UTF8.GetString(data);
+        return value.TrimEnd('\0');
+    }
+
+    private static string ReadGuid(IEventRecord record, string name)
+    {
+        return record.TryGetBinary(name, out byte[]? bytes) && bytes is { Length: 16 }
+            ? new Guid(bytes).ToString("D", CultureInfo.InvariantCulture)
+            : string.Empty;
+    }
+
+    private static string ReadFloat(IEventRecord record, string name)
+    {
+        return record.TryGetBinary(name, out byte[]? bytes) && bytes is { Length: >= 4 }
+            ? BitConverter.ToSingle(bytes, 0).ToString(CultureInfo.InvariantCulture)
+            : string.Empty;
+    }
+
+    private static string ReadDouble(IEventRecord record, string name)
+    {
+        return record.TryGetBinary(name, out byte[]? bytes) && bytes is { Length: >= 8 }
+            ? BitConverter.ToDouble(bytes, 0).ToString(CultureInfo.InvariantCulture)
+            : string.Empty;
+    }
+
+    private static string ReadBoolean(IEventRecord record, string name)
+    {
+        return record.TryGetBinary(name, out byte[]? bytes) && bytes is { Length: > 0 }
+            ? (Array.Exists(bytes, value => value != 0) ? "True" : "False")
+            : string.Empty;
+    }
+
+    private static string ReadPointer(IEventRecord record, string name)
+    {
+        if (record.TryGetBinary(name, out byte[]? bytes))
+        {
+            if (bytes is { Length: >= 8 })
+            {
+                return FormatHex(BitConverter.ToUInt64(bytes, 0), 16);
+            }
+
+            if (bytes is { Length: >= 4 })
+            {
+                return FormatHex(BitConverter.ToUInt32(bytes, 0), 8);
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string ReadSid(IEventRecord record, string name)
+    {
+        if (record.TryGetBinary(name, out byte[]? bytes) && bytes is { Length: >= 8 })
+        {
+            try
+            {
+                return new SecurityIdentifier(bytes, 0).Value;
+            }
+            catch (ArgumentException)
+            {
+                return Convert.ToHexString(bytes);
+            }
+        }
+
+        return string.Empty;
     }
 
     private static string ReadBestEffortValue(IEventRecord record, string name)
@@ -325,21 +455,23 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
             19 => "Sid",
             20 => "HexInt32",
             21 => "HexInt64",
-            22 => "WideCountedString",
-            23 => "AnsiCountedString",
+            22 => "ManifestCountedString",
+            23 => "ManifestCountedAnsiString",
             24 => "Reserved",
-            25 => "CountedBinary",
-            26 => "CountedString",
-            27 => "CountedAnsiString",
-            28 => "ReversedCountedWideString",
-            29 => "ReversedCountedAnsiString",
-            30 => "NonNullTerminatedWideString",
-            31 => "NonNullTerminatedAnsiString",
-            32 => "UnicodeChar",
-            33 => "AnsiChar",
-            34 => "SizeT",
-            35 => "HexDump",
-            36 => "WbemSid",
+            25 => "ManifestCountedBinary",
+            // The counted/reversed/non-terminated string input types are not contiguous with the
+            // manifest types; TDH_IN_TYPE jumps to 300 for the WMI/MOF input types.
+            300 => "CountedString",
+            301 => "CountedAnsiString",
+            302 => "ReversedCountedString",
+            303 => "ReversedCountedAnsiString",
+            304 => "NonNullTerminatedString",
+            305 => "NonNullTerminatedAnsiString",
+            306 => "UnicodeChar",
+            307 => "AnsiChar",
+            308 => "SizeT",
+            309 => "HexDump",
+            310 => "WbemSid",
             _ => $"Unknown ({inputType})"
         };
     }

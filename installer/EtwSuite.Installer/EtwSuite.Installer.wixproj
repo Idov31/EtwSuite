@@ -2,7 +2,16 @@
   <PropertyGroup>
     <OutputType>Package</OutputType>
     <OutputName>EtwSuite-$(Platform)</OutputName>
-    <ProductVersion>1.0.0</ProductVersion>
+    <!--
+      Product version follows major.minor.patch. Bump these (or override on the command line,
+      e.g. -p:PatchVersion=2) for every release so Windows Installer performs a real major
+      upgrade and refreshes all components instead of treating a same-version reinstall as a
+      no-op (which previously left unversioned files like the native ETW DLL uninstalled).
+    -->
+    <MajorVersion>1</MajorVersion>
+    <MinorVersion>0</MinorVersion>
+    <PatchVersion>1</PatchVersion>
+    <ProductVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion)</ProductVersion>
     <Cultures>en-US</Cultures>
     <AppProject>..\..\EtwSuite\EtwSuite.csproj</AppProject>
     <AppTargetFramework>net8.0-windows10.0.19041.0</AppTargetFramework>
@@ -19,7 +28,8 @@
       binaries (e.g. Microsoft.O365.Security.Native.ETW.dll, Ijwhost.dll). The language column is
       informational and these files install correctly, so suppress this benign validation noise.
     -->
-    <SuppressIces>ICE03</SuppressIces>
+    <!-- ICE61 is expected: AllowSameVersionUpgrades intentionally lets the product remove same-version copies of itself. -->
+    <SuppressIces>ICE03;ICE61</SuppressIces>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Platform)' == 'AnyCPU'">

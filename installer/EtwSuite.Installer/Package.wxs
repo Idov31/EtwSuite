@@ -8,7 +8,9 @@
     Scope="perUserOrMachine">
 
     <SummaryInformation Keywords="Installer" Description="EtwSuite MSI installer" Manufacturer="Ido Veltzman" />
-    <MajorUpgrade DowngradeErrorMessage="A newer version of EtwSuite is already installed." />
+    <!-- AllowSameVersionUpgrades makes a rebuild of the same version still remove the prior install
+         and reinstall all components, instead of leaving two products and stale components behind. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of EtwSuite is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <Property Id="ApplicationFolderName" Value="EtwSuite" />
@@ -32,12 +34,30 @@
     <SetProperty Id="WixPerMachineFolder" Value="[ProgramFiles6432Folder][ApplicationFolderName]" After="WixSetDefaultPerMachineFolder" Sequence="both" />
 
     <Feature Id="ApplicationFeature" Title="EtwSuite" Level="1">
-      <Files Include="$(var.PublishDir)\**" Directory="APPLICATIONFOLDER" />
+      <!-- The native ETW DLL is authored explicitly below, so exclude it from the wildcard harvest. -->
+      <Files Include="$(var.PublishDir)\**" Directory="APPLICATIONFOLDER">
+        <Exclude Files="$(var.PublishDir)\Microsoft.O365.Security.Native.ETW.dll" />
+      </Files>
+      <ComponentRef Id="NativeEtwComponent" />
     </Feature>
 
     <Feature Id="StartMenuShortcutFeature" Title="Start Menu shortcut" Description="Create an EtwSuite shortcut in the Start Menu." Level="1">
       <ComponentRef Id="StartMenuShortcutComponent" />
     </Feature>
+
+    <!--
+      Microsoft.O365.Security.Native.ETW.dll is a mixed-mode native binary with no Win32 version
+      resource, so Windows Installer treats it as unversioned. Author it as its own component with a
+      fixed GUID and force it to be re-laid-down on every install/repair: the RemoveFile deletes any
+      stale copy during the RemoveFiles action (sequenced before InstallFiles) so the file is always
+      copied fresh instead of being skipped by the unversioned-file overwrite rules.
+    -->
+    <DirectoryRef Id="APPLICATIONFOLDER">
+      <Component Id="NativeEtwComponent" Guid="{7E2D9C41-3F8A-4B6E-9C1D-2A5F8B0E4D77}" Bitness="always64">
+        <File Id="MicrosoftO365SecurityNativeETW" Source="$(var.PublishDir)\Microsoft.O365.Security.Native.ETW.dll" KeyPath="yes" />
+        <RemoveFile Id="ForceReinstallNativeEtw" Name="Microsoft.O365.Security.Native.ETW.dll" On="install" />
+      </Component>
+    </DirectoryRef>
 
     <DirectoryRef Id="APPLICATIONFOLDER">
       <Component Id="StartMenuShortcutComponent" Guid="{C5D52F36-3B89-40BC-A142-B1BEF508C9DD}">

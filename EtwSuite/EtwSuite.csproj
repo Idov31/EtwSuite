@@ -48,6 +48,18 @@
     <PublishReadyToRunExclude Include="Ijwhost.dll" />
   </ItemGroup>
 
+  <!--
+    In a framework-dependent build (e.g. Debug / running from the IDE) the mixed-mode assembly is
+    loaded from runtimes\<rid>\lib\net8.0\. The CLR's IJW startup loads ijwhost.dll using native
+    search starting in that assembly's own directory, but the package only ships ijwhost.dll under
+    runtimes\<rid>\native\. Copy ijwhost.dll next to the assembly so the load succeeds. (Self-
+    contained publishes lift both files to the app root, so they are already adjacent there.)
+  -->
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)microsoft.o365.security.native.etw\4.4.9\runtimes\win-x64\native\Ijwhost.dll" Link="runtimes\win-x64\lib\net8.0\Ijwhost.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(NuGetPackageRoot)microsoft.o365.security.native.etw\4.4.9\runtimes\win-arm64\native\Ijwhost.dll" Link="runtimes\win-arm64\lib\net8.0\Ijwhost.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
     <!-- Publish Properties -->
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>

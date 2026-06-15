@@ -119,6 +119,15 @@ dotnet build installer\EtwSuite.Installer\EtwSuite.Installer.wixproj -c Release 
 Only pass `AcceptEula=wix7` after confirming the WiX Toolset OSMF terms apply
 appropriately for your use.
 
+The installer version follows `major.minor.patch`. Bump it for every release so
+Windows Installer performs a real major upgrade. Either edit `MajorVersion`,
+`MinorVersion`, and `PatchVersion` in `installer/EtwSuite.Installer/EtwSuite.Installer.wixproj`
+or override on the command line:
+
+```powershell
+dotnet build installer\EtwSuite.Installer\EtwSuite.Installer.wixproj -c Release -p:Platform=x64 -p:AcceptEula=wix7 -p:PatchVersion=2
+```
+
 If ICE validation fails because the build environment cannot access the Windows
 Installer service, add `-p:SuppressValidation=true`.
 
