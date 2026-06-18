@@ -9,7 +9,7 @@ namespace EtwSuite.Etw;
 
 public sealed class TraceEventRecordingReader : IEtwRecordingReader
 {
-    private const string UnsupportedMessage = "This file type is not supported. The supported file types are: .etl, .json, .csv.";
+    private const string UnsupportedMessage = "This file type is not supported. Supported: .etl, .json, .csv.";
 
     public EtwRecordingFormat DetectFormat(string filePath)
     {

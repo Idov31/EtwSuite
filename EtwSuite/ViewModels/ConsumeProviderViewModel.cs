@@ -121,6 +121,8 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             {
                 OnPropertyChanged(nameof(CanStart));
                 OnPropertyChanged(nameof(SelectedProviderText));
+                OnPropertyChanged(nameof(CanStartOrStop));
+                OnPropertyChanged(nameof(StartStopText));
             }
         }
     }
@@ -180,15 +182,20 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             {
                 OnPropertyChanged(nameof(CanStart));
                 OnPropertyChanged(nameof(CanStop));
+                OnPropertyChanged(nameof(CanStartOrStop));
                 OnPropertyChanged(nameof(StartStopText));
                 OnPropertyChanged(nameof(EtlRecordingText));
             }
         }
     }
 
-    public bool CanStart => SelectedProvider is not null && State is EtwTraceSessionState.Stopped or EtwTraceSessionState.Failed;
+    public bool CanStart =>
+        SelectedProvider is not null &&
+        State is EtwTraceSessionState.Stopped or EtwTraceSessionState.Failed;
 
     public bool CanStop => State == EtwTraceSessionState.Running;
+
+    public bool CanStartOrStop => CanStart || CanStop;
 
     public string StartStopText => CanStop ? "Stop Consuming" : "Start Consuming";
 

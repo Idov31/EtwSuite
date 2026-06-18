@@ -152,6 +152,10 @@ namespace EtwSuite
             catch (OperationCanceledException)
             {
             }
+            catch (Exception ex)
+            {
+                ConsumeProviderViewModel.ReportError(ex.Message);
+            }
         }
 
         private async void ProvidersViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)

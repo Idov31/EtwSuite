@@ -376,7 +376,8 @@
                         Grid.Column="1"
                         VerticalAlignment="Bottom"
                         Click="StartStopConsumingButton_Click"
-                        Content="{Binding StartStopText}" />
+                        Content="{Binding StartStopText}"
+                        IsEnabled="{Binding CanStartOrStop}" />
 
                     <controls:ComboBox
                         Grid.Column="2"
@@ -1264,7 +1265,7 @@
                                     Text="Some providers, such as Microsoft-Windows-Kernel-Process, can require administrative privileges for recording."
                                     TextWrapping="Wrap" />
                                 <controls:TextBlock
-                                    Text="Some protected providers, such as Microsoft-Windows-Threat-Intelligence, may require running as a Protected Process Light (PPL) signer that is allowed to collect those events."
+                                    Text="Microsoft-Windows-Threat-Intelligence live consumption requires an allowed Protected Process Light (PPL) signer. Administrator elevation alone is not enough."
                                     TextWrapping="Wrap" />
                             </controls:StackPanel>
                         </controls:Border>

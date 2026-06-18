@@ -9,8 +9,8 @@
       no-op (which previously left unversioned files like the native ETW DLL uninstalled).
     -->
     <MajorVersion>1</MajorVersion>
-    <MinorVersion>0</MinorVersion>
-    <PatchVersion>1</PatchVersion>
+    <MinorVersion>1</MinorVersion>
+    <PatchVersion>0</PatchVersion>
     <ProductVersion>$(MajorVersion).$(MinorVersion).$(PatchVersion)</ProductVersion>
     <Cultures>en-US</Cultures>
     <AppProject>..\..\EtwSuite\EtwSuite.csproj</AppProject>

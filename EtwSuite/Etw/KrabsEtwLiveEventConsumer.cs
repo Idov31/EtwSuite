@@ -30,7 +30,7 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
 
     public ChannelReader<EtwLiveEventRecord> Events => _events.Reader;
 
-    public Task StartAsync(
+    public async Task StartAsync(
         EtwProviderEnableOptions options,
         CancellationToken cancellationToken)
     {
@@ -67,7 +67,24 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
 
-        return Task.CompletedTask;
+        Task completed = await Task.WhenAny(_traceTask, Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken));
+        if (completed != _traceTask)
+        {
+            return;
+        }
+
+        try
+        {
+            await _traceTask;
+        }
+        catch (Exception ex)
+        {
+            await StopAsync();
+            throw CreateStartException(ex);
+        }
+
+        await StopAsync();
+        throw new InvalidOperationException("The ETW trace session ended before live consumption started.");
     }
 
     public async Task StopAsync()
@@ -100,16 +117,28 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         try
         {
             trace.Stop();
-            if (traceTask is not null)
-            {
-                await traceTask.WaitAsync(TimeSpan.FromSeconds(5));
-            }
         }
-        catch (TimeoutException)
+        catch (Exception ex)
         {
+            Debug.WriteLine($"ETW trace stop failed: {ex.Message}");
         }
         finally
         {
+            if (traceTask is not null)
+            {
+                try
+                {
+                    await traceTask.WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (TimeoutException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"ETW trace task ended during stop: {ex.Message}");
+                }
+            }
+
             trace.Dispose();
         }
     }
@@ -495,4 +524,17 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         });
     }
 
+    private static Exception CreateStartException(Exception exception)
+    {
+        return exception switch
+        {
+            UnauthorizedAccessException => new UnauthorizedAccessException(
+                "Administrator privileges or tracing/logging group membership are required to consume this provider.",
+                exception),
+            FileNotFoundException => new FileNotFoundException(
+                "The ETW live consumer native dependency could not be loaded. Reinstall or republish EtwSuite with the Microsoft.O365.Security.Native.ETW runtime files.",
+                exception),
+            _ => new InvalidOperationException("The ETW trace session failed to start.", exception)
+        };
+    }
 }
