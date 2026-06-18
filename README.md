@@ -29,6 +29,7 @@ EtwSuite is an ETW inspection suite inspired by [EtwExplorer](https://github.com
 - Save, load, and delete session templates in a local SQLite database.
 - Open a provider directly from the provider list in the consuming window.
 - Intel x64 and ARM64 compatibility.
+- Support consumption of special provider `Microsoft-Windows-Security-Auditing`.
 
 ## Filtering
 
@@ -95,7 +96,9 @@ For installation, download the latest release and install the MSI for your archi
 - [Microsoft.Data.Sqlite](https://www.nuget.org/packages/Microsoft.Data.Sqlite)
 - [Microsoft.WindowsAppSDK](https://www.nuget.org/packages/Microsoft.WindowsAppSDK)
 
-Some live ETW providers require administrator privileges or special system permissions (e.g. Microsoft-Windows-Threat-Intelligence). Basic provider browsing, saved sessions, and supported offline recording inspection should not require elevation.
+> [!WARNING]
+>
+> Some live ETW providers require administrator privileges or special system permissions. Live consumption of `Microsoft-Windows-Threat-Intelligence` requires an allowed Protected Process Light (PPL) signer; administrator elevation alone is not enough. Basic provider browsing, saved sessions, and supported offline recording inspection should not require elevation.
 
 #### Build Commands
 
