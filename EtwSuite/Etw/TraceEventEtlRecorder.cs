@@ -29,8 +29,14 @@ public sealed class TraceEventEtlRecorder : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(filePath)) ?? ".");
 
-        string sessionName = CreateSessionName(options);
-        var session = new TraceEventSession(sessionName, filePath)
+        EtwTraceSessionDescriptor traceSession = EtwTraceSessionNameResolver.ResolveSession(options, "EtwSuite-Etl-", 42);
+        if (!traceSession.CanStopSession)
+        {
+            throw new NotSupportedException(
+                $"ETL recording is not supported for {traceSession.SessionName} because the session is owned by Windows and cannot be stopped or reconfigured.");
+        }
+
+        var session = new TraceEventSession(traceSession.SessionName, filePath)
         {
             StopOnDispose = true
         };
@@ -73,17 +79,4 @@ public sealed class TraceEventEtlRecorder : IAsyncDisposable
         await StopAsync();
     }
 
-    private static string CreateSessionName(EtwProviderEnableOptions options)
-    {
-        string providerName = new([.. options.ProviderName
-            .Where(character => char.IsLetterOrDigit(character) || character is '-' or '_')
-            .Take(42)]);
-
-        if (string.IsNullOrWhiteSpace(providerName))
-        {
-            providerName = "Provider";
-        }
-
-        return $"EtwSuite-Etl-{providerName}-{Guid.NewGuid():N}"[..64];
-    }
 }

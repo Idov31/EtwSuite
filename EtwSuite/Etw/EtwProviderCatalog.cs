@@ -502,7 +502,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
             parameters[wmiDataId.Value] = new EtwSchemaParameter(
                 property.Name,
-                MapWmiType(property.Type));
+                MapWmiType(property));
         }
 
         return [.. parameters.Values];
@@ -534,6 +534,16 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
             ?.Value;
 
         return value is int intValue ? intValue : null;
+    }
+
+    private static string? GetQualifierString(PropertyData owner, string qualifierName)
+    {
+        object? value = owner.Qualifiers
+            .OfType<QualifierData>()
+            .FirstOrDefault(qualifier => string.Equals(qualifier.Name, qualifierName, StringComparison.OrdinalIgnoreCase))
+            ?.Value;
+
+        return value as string;
     }
 
     private static IEnumerable<int> GetQualifierInt32Values(ManagementClass owner, string qualifierName)
@@ -697,7 +707,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
             parameters.Add(new EtwSchemaParameter(
                 GetOffsetString(buffer, propertyInfo.NameOffset, $"Parameter {i + 1}"),
-                MapTdhInputType(propertyInfo.InType)));
+                TdhInputTypeMapper.Map(propertyInfo.InType)));
         }
 
         return parameters;
@@ -747,51 +757,6 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         };
     }
 
-    private static string MapTdhInputType(ushort inputType)
-    {
-        return inputType switch
-        {
-            0 => "Null",
-            1 => "WideString",
-            2 => "AnsiString",
-            3 => "Int8",
-            4 => "UInt8",
-            5 => "Short",
-            6 => "UShort",
-            7 => "Integer",
-            8 => "UInteger",
-            9 => "Int64",
-            10 => "UInt64",
-            11 => "Float",
-            12 => "Double",
-            13 => "Boolean",
-            14 => "Binary",
-            15 => "Guid",
-            16 => "Pointer",
-            17 => "FileTime",
-            18 => "SystemTime",
-            19 => "Sid",
-            20 => "HexInt32",
-            21 => "HexInt64",
-            22 => "WideCountedString",
-            23 => "AnsiCountedString",
-            24 => "Reserved",
-            25 => "CountedBinary",
-            26 => "CountedString",
-            27 => "CountedAnsiString",
-            28 => "ReversedCountedWideString",
-            29 => "ReversedCountedAnsiString",
-            30 => "NonNullTerminatedWideString",
-            31 => "NonNullTerminatedAnsiString",
-            32 => "UnicodeChar",
-            33 => "AnsiChar",
-            34 => "SizeT",
-            35 => "HexDump",
-            36 => "WbemSid",
-            _ => $"Unknown ({inputType})"
-        };
-    }
-
     private static string MapManifestInputType(string inputType)
     {
         string normalizedType = inputType.StartsWith("win:", StringComparison.OrdinalIgnoreCase)
@@ -837,27 +802,11 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         };
     }
 
-    private static string MapWmiType(CimType type)
+    private static string MapWmiType(PropertyData property)
     {
-        return type switch
-        {
-            CimType.Boolean => "Boolean",
-            CimType.Char16 => "UnicodeChar",
-            CimType.DateTime => "SystemTime",
-            CimType.Object => "Struct",
-            CimType.Real32 => "Float",
-            CimType.Real64 => "Double",
-            CimType.Reference => "Pointer",
-            CimType.SInt8 => "Int8",
-            CimType.SInt16 => "Short",
-            CimType.SInt32 => "Integer",
-            CimType.SInt64 => "Int64",
-            CimType.String => "WideString",
-            CimType.UInt8 => "UInt8",
-            CimType.UInt16 => "UShort",
-            CimType.UInt32 => "UInteger",
-            CimType.UInt64 => "UInt64",
-            _ => type.ToString()
-        };
+        return TdhInputTypeMapper.MapWmi(
+            property.Type,
+            GetQualifierString(property, "StringTermination"),
+            GetQualifierString(property, "extension"));
     }
 }
