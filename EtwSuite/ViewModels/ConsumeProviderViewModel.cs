@@ -12,6 +12,8 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 {
     private const int MaxDisplayedEvents = 10_000;
     private const int DefaultEventsPerPage = 100;
+    private const int LiveEventFlushBatchSize = 10;
+    private static readonly TimeSpan LiveEventFlushInterval = TimeSpan.FromSeconds(1);
     private readonly IEtwProviderCatalog _providerCatalog;
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly List<EtwLiveEventRecord> _eventBuffer = new();
@@ -384,29 +386,16 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         IEtwLiveEventConsumer consumer,
         CancellationToken cancellationToken)
     {
-        var batch = new List<EtwLiveEventRecord>(250);
-        try
-        {
-            await foreach (EtwLiveEventRecord record in consumer.Events.ReadAllAsync(cancellationToken))
-            {
-                batch.Add(record);
-                if (batch.Count >= 250)
-                {
-                    FlushBatch(batch);
-                    batch.Clear();
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        finally
-        {
-            if (batch.Count > 0)
+        await LiveEventBatchReader.DrainBatchesAsync(
+            consumer.Events,
+            LiveEventFlushBatchSize,
+            LiveEventFlushInterval,
+            batch =>
             {
                 FlushBatch(batch);
-            }
-        }
+                return Task.CompletedTask;
+            },
+            cancellationToken);
     }
 
     private void FlushBatch(IReadOnlyList<EtwLiveEventRecord> records)
@@ -414,26 +403,48 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         _dispatcherQueue.TryEnqueue(() =>
         {
             bool wasOnLastPage = CurrentPage == TotalPages;
+            EtwCompiledFilter<EtwLiveEventRecord> eventFilter =
+                EtwFilterCompiler.CompileEventFilter(SelectedEventFilterMode, EventFilterText);
 
             foreach (EtwLiveEventRecord record in records)
             {
                 _eventBuffer.Add(record);
+                if (eventFilter.ErrorMessage is null && eventFilter.Matches(record))
+                {
+                    _filteredEvents.Add(record);
+                }
             }
 
             while (_eventBuffer.Count > MaxDisplayedEvents)
             {
+                EtwLiveEventRecord droppedRecord = _eventBuffer[0];
                 _eventBuffer.RemoveAt(0);
+                _filteredEvents.Remove(droppedRecord);
                 _droppedDisplayEvents++;
             }
 
-            ApplyEventFilter(resetPage: false);
+            if (eventFilter.ErrorMessage is null)
+            {
+                ClearFilterError("Event filter:");
+            }
+            else
+            {
+                StatusMessage = $"Event filter: {eventFilter.ErrorMessage}";
+            }
+
+            if (CurrentPage > TotalPages)
+            {
+                _currentPage = TotalPages;
+                OnPropertyChanged(nameof(CurrentPage));
+            }
+
             if (wasOnLastPage)
             {
                 _currentPage = TotalPages;
                 OnPropertyChanged(nameof(CurrentPage));
-                RefreshCurrentPage();
             }
 
+            RefreshCurrentPage();
             OnPropertyChanged(nameof(EventCountText));
             OnPropertyChanged(nameof(TotalEventCountText));
             OnPropertyChanged(nameof(HasEvents));
