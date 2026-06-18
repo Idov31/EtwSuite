@@ -22,6 +22,8 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
     private readonly ConcurrentDictionary<uint, string> _processNames = new();
     private UserTrace? _trace;
     private Task? _traceTask;
+    private Provider? _provider;
+    private EtwTraceSessionDescriptor? _traceSession;
     private string _providerName = string.Empty;
     private Guid _providerId;
     private bool _disposed;
@@ -43,8 +45,8 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         _providerName = options.ProviderName;
         _providerId = options.ProviderId;
 
-        string sessionName = CreateSessionName(options);
-        var trace = new UserTrace(sessionName);
+        EtwTraceSessionDescriptor traceSession = EtwTraceSessionNameResolver.ResolveSession(options, "EtwSuite-", 48);
+        var trace = new UserTrace(traceSession.SessionName);
         var provider = new Provider(options.ProviderId)
         {
             Level = options.Level,
@@ -57,6 +59,8 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         trace.Enable(provider);
 
         _trace = trace;
+        _provider = provider;
+        _traceSession = traceSession;
         _traceTask = Task.Factory.StartNew(
             trace.Start,
             CancellationToken.None,
@@ -70,10 +74,25 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
     {
         UserTrace? trace = _trace;
         Task? traceTask = _traceTask;
+        Provider? provider = _provider;
+        EtwTraceSessionDescriptor? traceSession = _traceSession;
         _trace = null;
         _traceTask = null;
+        _provider = null;
+        _traceSession = null;
 
         if (trace is null)
+        {
+            return;
+        }
+
+        if (provider is not null)
+        {
+            provider.OnEvent -= HandleEvent;
+            provider.OnError -= HandleError;
+        }
+
+        if (traceSession?.CanStopSession == false)
         {
             return;
         }
@@ -194,11 +213,19 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         foreach (Property property in record.Properties)
         {
             string name = property.Name;
-            string type = MapInputType((uint)property.Type);
+            string type = MapPayloadInputType(record, property);
             payload.Add(new EtwPayloadValue(name, type, ReadPayloadValue(record, name, type)));
         }
 
         return payload;
+    }
+
+    private static string MapPayloadInputType(IEventRecord record, Property property)
+    {
+        string type = TdhInputTypeMapper.Map((uint)property.Type);
+        return record.DecodingSource == DecodingSource.Wbem && type == "WideString"
+            ? "ReverseCountedWideString"
+            : type;
     }
 
     private static string ReadPayloadValue(IEventRecord record, string name, string type)
@@ -209,11 +236,11 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
             {
                 "WideString" => record.GetUnicodeString(name, string.Empty),
                 "AnsiString" => record.GetAnsiString(name, string.Empty),
-                "CountedString" or "ManifestCountedString" => ReadCountedString(record, name, wide: true, bigEndian: false),
+                "CountedWideString" or "CountedString" or "ManifestCountedWideString" or "ManifestCountedString" => ReadWideCountedString(record, name, bigEndian: false),
                 "CountedAnsiString" or "ManifestCountedAnsiString" => ReadCountedString(record, name, wide: false, bigEndian: false),
-                "ReversedCountedString" => ReadCountedString(record, name, wide: true, bigEndian: true),
-                "ReversedCountedAnsiString" => ReadCountedString(record, name, wide: false, bigEndian: true),
-                "NonNullTerminatedString" or "UnicodeChar" => ReadNonNullTerminatedString(record, name, wide: true),
+                "ReverseCountedWideString" or "ReversedCountedString" or "ReversedCountedWideString" => ReadReverseCountedWideString(record, name),
+                "ReverseCountedAnsiString" or "ReversedCountedAnsiString" => ReadCountedString(record, name, wide: false, bigEndian: true),
+                "NonNullTerminatedWideString" or "NonNullTerminatedString" or "UnicodeChar" => ReadNonNullTerminatedString(record, name, wide: true),
                 "NonNullTerminatedAnsiString" or "AnsiChar" => ReadNonNullTerminatedString(record, name, wide: false),
                 "ManifestCountedBinary" => ReadCountedBinary(record, name),
                 "Int8" => record.GetInt8(name, 0).ToString(CultureInfo.InvariantCulture),
@@ -248,6 +275,59 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
     private static string FormatHex(ulong value, int digits)
     {
         return "0x" + value.ToString("X" + digits.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    }
+
+    private static string ReadWideCountedString(IEventRecord record, string name, bool bigEndian)
+    {
+        if (record.TryGetCountedString(name, out string? value) && !string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        return ReadCountedString(record, name, wide: true, bigEndian);
+    }
+
+    private static string ReadReverseCountedWideString(IEventRecord record, string name)
+    {
+        return record.TryGetBinary(name, out byte[]? bytes)
+            ? DecodeReverseCountedWideString(bytes)
+            : string.Empty;
+    }
+
+    internal static string DecodeReverseCountedWideString(byte[] bytes)
+    {
+        if (bytes.Length < sizeof(ushort))
+        {
+            return string.Empty;
+        }
+
+        int countOffset = 0;
+
+        if (bytes.Length >= sizeof(ushort) + 1)
+        {
+            int countAtStart = (bytes[0] << 8) | bytes[1];
+            int countAfterPrefix = (bytes[1] << 8) | bytes[2];
+            int availableAtStart = bytes.Length - sizeof(ushort);
+            int availableAfterPrefix = bytes.Length - sizeof(ushort) - 1;
+
+            if ((countAtStart == 0 || countAtStart > availableAtStart)
+                && countAfterPrefix != 0
+                && countAfterPrefix <= availableAfterPrefix + 1)
+            {
+                countOffset = 1;
+            }
+        }
+
+        int dataBytes = (bytes[countOffset] << 8) | bytes[countOffset + 1];
+        int availableDataBytes = bytes.Length - countOffset - sizeof(ushort);
+
+        if (dataBytes > availableDataBytes)
+        {
+            dataBytes = availableDataBytes;
+        }
+
+        dataBytes &= ~1;
+        return DecodeString(bytes.AsSpan(countOffset + sizeof(ushort), dataBytes), wide: true);
     }
 
     // Counted strings store a 16-bit byte count (little-endian, or big-endian for the reversed
@@ -415,64 +495,4 @@ public sealed class KrabsEtwLiveEventConsumer : IEtwLiveEventConsumer
         });
     }
 
-    private static string CreateSessionName(EtwProviderEnableOptions options)
-    {
-        string providerName = new([.. options.ProviderName
-            .Where(character => char.IsLetterOrDigit(character) || character is '-' or '_')
-            .Take(48)]);
-
-        if (string.IsNullOrWhiteSpace(providerName))
-        {
-            providerName = "Provider";
-        }
-
-        return $"EtwSuite-{providerName}-{Guid.NewGuid():N}"[..64];
-    }
-
-    private static string MapInputType(uint inputType)
-    {
-        return inputType switch
-        {
-            0 => "Null",
-            1 => "WideString",
-            2 => "AnsiString",
-            3 => "Int8",
-            4 => "UInt8",
-            5 => "Short",
-            6 => "UShort",
-            7 => "Integer",
-            8 => "UInteger",
-            9 => "Int64",
-            10 => "UInt64",
-            11 => "Float",
-            12 => "Double",
-            13 => "Boolean",
-            14 => "Binary",
-            15 => "Guid",
-            16 => "Pointer",
-            17 => "FileTime",
-            18 => "SystemTime",
-            19 => "Sid",
-            20 => "HexInt32",
-            21 => "HexInt64",
-            22 => "ManifestCountedString",
-            23 => "ManifestCountedAnsiString",
-            24 => "Reserved",
-            25 => "ManifestCountedBinary",
-            // The counted/reversed/non-terminated string input types are not contiguous with the
-            // manifest types; TDH_IN_TYPE jumps to 300 for the WMI/MOF input types.
-            300 => "CountedString",
-            301 => "CountedAnsiString",
-            302 => "ReversedCountedString",
-            303 => "ReversedCountedAnsiString",
-            304 => "NonNullTerminatedString",
-            305 => "NonNullTerminatedAnsiString",
-            306 => "UnicodeChar",
-            307 => "AnsiChar",
-            308 => "SizeT",
-            309 => "HexDump",
-            310 => "WbemSid",
-            _ => $"Unknown ({inputType})"
-        };
-    }
 }
