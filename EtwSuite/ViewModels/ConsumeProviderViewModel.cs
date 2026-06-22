@@ -23,6 +23,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     private TraceEventEtlRecorder? _etlRecorder;
     private CancellationTokenSource? _consumeCancellation;
     private EtwProviderInfo? _selectedProvider;
+    private EtwProviderInfo? _activeProvider;
     private string _searchText = string.Empty;
     private string _eventFilterText = string.Empty;
     private EtwFilterMode _selectedEventFilterMode = EtwFilterMode.Basic;
@@ -35,6 +36,8 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     private bool _isEtlRecordingEnabled;
     private string? _etlRecordingPath;
     private string? _lastRecordedEtlPath;
+    private LiveEventSortField _sortField = LiveEventSortField.Time;
+    private LiveEventSortDirection _sortDirection = LiveEventSortDirection.Ascending;
 
     public ConsumeProviderViewModel(IEtwProviderCatalog providerCatalog)
     {
@@ -49,6 +52,32 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     public IReadOnlyList<EtwFilterMode> EventFilterModes { get; } = new[] { EtwFilterMode.Basic, EtwFilterMode.SQL };
 
     public IReadOnlyList<string> ExportFormats { get; } = new[] { "JSON", "CSV", "ETL" };
+
+    public LiveEventSortField SortField => _sortField;
+
+    public LiveEventSortDirection SortDirection => _sortDirection;
+
+    public string TimeSortHeader => CreateSortHeader("Time", LiveEventSortField.Time);
+
+    public string ProviderSortHeader => CreateSortHeader("Provider", LiveEventSortField.Provider);
+
+    public string EventSortHeader => CreateSortHeader("Event", LiveEventSortField.Event);
+
+    public string IdSortHeader => CreateSortHeader("ID", LiveEventSortField.Id);
+
+    public string VersionSortHeader => CreateSortHeader("Version", LiveEventSortField.Version);
+
+    public string OpcodeSortHeader => CreateSortHeader("Opcode", LiveEventSortField.Opcode);
+
+    public string LevelSortHeader => CreateSortHeader("Level", LiveEventSortField.Level);
+
+    public string ProcessIdSortHeader => CreateSortHeader("PID", LiveEventSortField.ProcessId);
+
+    public string ProcessNameSortHeader => CreateSortHeader("Process", LiveEventSortField.ProcessName);
+
+    public string ThreadIdSortHeader => CreateSortHeader("TID", LiveEventSortField.ThreadId);
+
+    public string ParametersSortHeader => CreateSortHeader("Parameters", LiveEventSortField.Parameters);
 
     public string SelectedExportFormat
     {
@@ -121,8 +150,6 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             {
                 OnPropertyChanged(nameof(CanStart));
                 OnPropertyChanged(nameof(SelectedProviderText));
-                OnPropertyChanged(nameof(CanStartOrStop));
-                OnPropertyChanged(nameof(StartStopText));
             }
         }
     }
@@ -130,6 +157,22 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     public string SelectedProviderText => SelectedProvider is null
         ? "No provider selected"
         : $"{SelectedProvider.Name} ({SelectedProvider.Id:D})";
+
+    public EtwProviderInfo? ActiveProvider
+    {
+        get => _activeProvider;
+        private set
+        {
+            if (SetProperty(ref _activeProvider, value))
+            {
+                OnPropertyChanged(nameof(ActiveProviderText));
+            }
+        }
+    }
+
+    public string ActiveProviderText => ActiveProvider is null
+        ? "No active provider"
+        : $"{ActiveProvider.Name} ({ActiveProvider.Id:D})";
 
     public string SearchText
     {
@@ -182,8 +225,6 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             {
                 OnPropertyChanged(nameof(CanStart));
                 OnPropertyChanged(nameof(CanStop));
-                OnPropertyChanged(nameof(CanStartOrStop));
-                OnPropertyChanged(nameof(StartStopText));
                 OnPropertyChanged(nameof(EtlRecordingText));
             }
         }
@@ -191,13 +232,9 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
     public bool CanStart =>
         SelectedProvider is not null &&
-        State is EtwTraceSessionState.Stopped or EtwTraceSessionState.Failed;
+        State is EtwTraceSessionState.Stopped or EtwTraceSessionState.Running or EtwTraceSessionState.Failed;
 
     public bool CanStop => State == EtwTraceSessionState.Running;
-
-    public bool CanStartOrStop => CanStart || CanStop;
-
-    public string StartStopText => CanStop ? "Stop Consuming" : "Start Consuming";
 
     public string EventCountText => $"{Events.Count:N0} events";
     public string TotalEventCountText => string.IsNullOrWhiteSpace(EventFilterText)
@@ -247,6 +284,12 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
     public bool HasEvents => _filteredEvents.Count > 0;
 
+    public bool CanClearEvents =>
+        _eventBuffer.Count > 0 ||
+        _filteredEvents.Count > 0 ||
+        Events.Count > 0 ||
+        _droppedDisplayEvents > 0;
+
     public bool CanExport => HasEvents ||
         (string.Equals(SelectedExportFormat, "ETL", StringComparison.OrdinalIgnoreCase) && CanOpenLastRecording);
 
@@ -263,24 +306,20 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
     public async Task StartAsync(string? etlRecordingPath, CancellationToken cancellationToken)
     {
-        if (!CanStart || SelectedProvider is null)
+        if (!CanStart || SelectedProvider is null || State is EtwTraceSessionState.Starting or EtwTraceSessionState.Stopping)
         {
             return;
         }
 
+        EtwProviderInfo providerToStart = SelectedProvider;
+        if (_consumer is not null)
+        {
+            await StopAsync();
+        }
+
         State = EtwTraceSessionState.Starting;
         StatusMessage = "Starting trace session...";
-        _eventBuffer.Clear();
-        _filteredEvents.Clear();
-        Events.Clear();
-        _currentPage = 1;
-        _droppedDisplayEvents = 0;
-        OnPropertyChanged(nameof(EventCountText));
-        OnPropertyChanged(nameof(TotalEventCountText));
-        OnPropertyChanged(nameof(HasEvents));
-        OnPropertyChanged(nameof(CanExport));
-        OnPropertyChanged(nameof(DroppedEventsText));
-        OnPagingPropertiesChanged();
+        ClearEventsCore(updateStatus: false);
 
         _consumeCancellation?.Cancel();
         _consumeCancellation?.Dispose();
@@ -292,7 +331,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
 
         try
         {
-            var enableOptions = new EtwProviderEnableOptions(SelectedProvider.Name, SelectedProvider.Id);
+            var enableOptions = new EtwProviderEnableOptions(providerToStart.Name, providerToStart.Id);
             if (IsEtlRecordingEnabled)
             {
                 string? path = !string.IsNullOrWhiteSpace(etlRecordingPath)
@@ -315,14 +354,14 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
                 enableOptions,
                 _consumeCancellation.Token);
 
+            ActiveProvider = providerToStart;
             State = EtwTraceSessionState.Running;
-            StatusMessage = IsEtlRecordingEnabled && !string.IsNullOrWhiteSpace(EtlRecordingPath)
-                ? $"Consuming {SelectedProvider.Name} and recording ETL."
-                : $"Consuming {SelectedProvider.Name}.";
+            StatusMessage = GetRunningStatusMessage();
             _ = DrainEventsAsync(consumer, _consumeCancellation.Token);
         }
         catch (Exception ex)
         {
+            ActiveProvider = null;
             State = EtwTraceSessionState.Failed;
             StatusMessage = ex.Message;
             if (etlRecorder is not null)
@@ -346,6 +385,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
     {
         if (_consumer is null)
         {
+            ActiveProvider = null;
             State = EtwTraceSessionState.Stopped;
             return;
         }
@@ -358,6 +398,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         TraceEventEtlRecorder? etlRecorder = _etlRecorder;
         _consumer = null;
         _etlRecorder = null;
+        ActiveProvider = null;
         await consumer.DisposeAsync();
         if (etlRecorder is not null)
         {
@@ -386,6 +427,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             _etlRecorder = null;
         }
 
+        ActiveProvider = null;
         _consumeCancellation?.Dispose();
     }
 
@@ -399,16 +441,21 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             LiveEventFlushInterval,
             batch =>
             {
-                FlushBatch(batch);
+                FlushBatch(consumer, batch);
                 return Task.CompletedTask;
             },
             cancellationToken);
     }
 
-    private void FlushBatch(IReadOnlyList<EtwLiveEventRecord> records)
+    private void FlushBatch(IEtwLiveEventConsumer consumer, IReadOnlyList<EtwLiveEventRecord> records)
     {
         _dispatcherQueue.TryEnqueue(() =>
         {
+            if (!ReferenceEquals(_consumer, consumer))
+            {
+                return;
+            }
+
             bool wasOnLastPage = CurrentPage == TotalPages;
             EtwCompiledFilter<EtwLiveEventRecord> eventFilter =
                 EtwFilterCompiler.CompileEventFilter(SelectedEventFilterMode, EventFilterText);
@@ -452,12 +499,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             }
 
             RefreshCurrentPage();
-            OnPropertyChanged(nameof(EventCountText));
-            OnPropertyChanged(nameof(TotalEventCountText));
-            OnPropertyChanged(nameof(HasEvents));
-            OnPropertyChanged(nameof(CanExport));
-            OnPropertyChanged(nameof(DroppedEventsText));
-            OnPagingPropertiesChanged();
+            OnEventDisplayPropertiesChanged();
         });
     }
 
@@ -485,9 +527,37 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         EventFilterText = filterText;
     }
 
+    public void SortBy(LiveEventSortField sortField)
+    {
+        if (_sortField == sortField)
+        {
+            _sortDirection = _sortDirection == LiveEventSortDirection.Ascending
+                ? LiveEventSortDirection.Descending
+                : LiveEventSortDirection.Ascending;
+        }
+        else
+        {
+            _sortField = sortField;
+            _sortDirection = LiveEventSortDirection.Ascending;
+        }
+
+        _currentPage = 1;
+        OnPropertyChanged(nameof(CurrentPage));
+        OnSortPropertiesChanged();
+        RefreshCurrentPage();
+        OnPagingPropertiesChanged();
+    }
+
+    public void ClearEvents()
+    {
+        ClearEventsCore(updateStatus: true);
+    }
+
     public IReadOnlyList<LiveEventViewModel> GetEventSnapshot()
     {
-        return _filteredEvents.Select(record => new LiveEventViewModel(record)).ToArray();
+        return GetSortedFilteredEvents()
+            .Select(record => new LiveEventViewModel(record))
+            .ToArray();
     }
 
     public string CreateExportContent()
@@ -606,17 +676,53 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         }
     }
 
+    private IReadOnlyList<EtwLiveEventRecord> GetSortedFilteredEvents()
+    {
+        return LiveEventSorter.Sort(_filteredEvents, SortField, SortDirection);
+    }
+
+    private void ClearEventsCore(bool updateStatus)
+    {
+        _eventBuffer.Clear();
+        _filteredEvents.Clear();
+        Events.Clear();
+        _currentPage = 1;
+        _droppedDisplayEvents = 0;
+        OnPropertyChanged(nameof(CurrentPage));
+        OnEventDisplayPropertiesChanged();
+
+        if (!updateStatus)
+        {
+            return;
+        }
+
+        StatusMessage = State == EtwTraceSessionState.Running
+            ? $"Cleared events. {GetRunningStatusMessage()}"
+            : "Cleared events.";
+    }
+
     private void RefreshCurrentPage()
     {
         Events.Clear();
 
         int skip = (CurrentPage - 1) * EventsPerPage;
-        foreach (EtwLiveEventRecord record in _filteredEvents.Skip(skip).Take(EventsPerPage))
+        foreach (EtwLiveEventRecord record in GetSortedFilteredEvents().Skip(skip).Take(EventsPerPage))
         {
             Events.Add(new LiveEventViewModel(record));
         }
 
         OnPropertyChanged(nameof(EventCountText));
+    }
+
+    private void OnEventDisplayPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(EventCountText));
+        OnPropertyChanged(nameof(TotalEventCountText));
+        OnPropertyChanged(nameof(HasEvents));
+        OnPropertyChanged(nameof(CanClearEvents));
+        OnPropertyChanged(nameof(CanExport));
+        OnPropertyChanged(nameof(DroppedEventsText));
+        OnPagingPropertiesChanged();
     }
 
     private void OnPagingPropertiesChanged()
@@ -625,6 +731,46 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         OnPropertyChanged(nameof(CanGoToPreviousPage));
         OnPropertyChanged(nameof(CanGoToNextPage));
         OnPropertyChanged(nameof(PageStatusText));
+    }
+
+    private string CreateSortHeader(string label, LiveEventSortField sortField)
+    {
+        if (SortField != sortField)
+        {
+            return label;
+        }
+
+        string sortGlyph = SortDirection == LiveEventSortDirection.Ascending ? "^" : "v";
+        return $"{label} {sortGlyph}";
+    }
+
+    private void OnSortPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(SortField));
+        OnPropertyChanged(nameof(SortDirection));
+        OnPropertyChanged(nameof(TimeSortHeader));
+        OnPropertyChanged(nameof(ProviderSortHeader));
+        OnPropertyChanged(nameof(EventSortHeader));
+        OnPropertyChanged(nameof(IdSortHeader));
+        OnPropertyChanged(nameof(VersionSortHeader));
+        OnPropertyChanged(nameof(OpcodeSortHeader));
+        OnPropertyChanged(nameof(LevelSortHeader));
+        OnPropertyChanged(nameof(ProcessIdSortHeader));
+        OnPropertyChanged(nameof(ProcessNameSortHeader));
+        OnPropertyChanged(nameof(ThreadIdSortHeader));
+        OnPropertyChanged(nameof(ParametersSortHeader));
+    }
+
+    private string GetRunningStatusMessage()
+    {
+        if (ActiveProvider is null)
+        {
+            return "Consuming provider.";
+        }
+
+        return IsEtlRecordingEnabled && !string.IsNullOrWhiteSpace(EtlRecordingPath)
+            ? $"Consuming {ActiveProvider.Name} and recording ETL."
+            : $"Consuming {ActiveProvider.Name}.";
     }
 
     private static string CreateJson(IReadOnlyList<LiveEventViewModel> events)
@@ -755,10 +901,7 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
         }
 
         RefreshCurrentPage();
-        OnPropertyChanged(nameof(TotalEventCountText));
-        OnPropertyChanged(nameof(HasEvents));
-        OnPropertyChanged(nameof(CanExport));
-        OnPagingPropertiesChanged();
+        OnEventDisplayPropertiesChanged();
     }
 
     private void ClearFilterError(string prefix)
@@ -768,8 +911,8 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             return;
         }
 
-        StatusMessage = State == EtwTraceSessionState.Running && SelectedProvider is not null
-            ? $"Consuming {SelectedProvider.Name}."
+        StatusMessage = State == EtwTraceSessionState.Running
+            ? GetRunningStatusMessage()
             : "Select a provider to start consuming.";
     }
 }

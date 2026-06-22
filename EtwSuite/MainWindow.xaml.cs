@@ -15,6 +15,7 @@ namespace EtwSuite
     {
         private readonly CancellationTokenSource _loadCancellation = new();
         private CancellationTokenSource? _schemaLoadCancellation;
+        private bool _suppressThemePersistence = true;
 
         public MainWindow()
         {
@@ -25,19 +26,21 @@ namespace EtwSuite
             var providerCatalog = new EtwProviderCatalog();
             var recordingReader = new TraceEventRecordingReader();
             var sessionTemplateStore = new SqliteEtwSessionTemplateStore();
-            var sessionTemplateSettings = new FileEtwSessionTemplateSettings();
+            var applicationSettings = new FileEtwSessionTemplateSettings();
             ProvidersViewModel = new ProvidersViewModel(providerCatalog);
             ConsumeProviderViewModel = new ConsumeProviderViewModel(providerCatalog);
             OpenRecordingViewModel = new OpenRecordingViewModel(recordingReader);
+            AppThemeViewModel = new AppThemeViewModel(applicationSettings);
             SavedSessionsViewModel = new SavedSessionsViewModel(
                 sessionTemplateStore,
-                sessionTemplateSettings,
+                applicationSettings,
                 ConsumeProviderViewModel);
 
             ListProvidersView.DataContext = ProvidersViewModel;
             ConsumeProviderView.DataContext = ConsumeProviderViewModel;
             OpenRecordingView.DataContext = OpenRecordingViewModel;
             SavedSessionsView.DataContext = SavedSessionsViewModel;
+            ThemeModeComboBox.DataContext = AppThemeViewModel;
             ProvidersViewModel.PropertyChanged += ProvidersViewModel_PropertyChanged;
 
             Closed += MainWindow_Closed;
@@ -48,6 +51,8 @@ namespace EtwSuite
         public ConsumeProviderViewModel ConsumeProviderViewModel { get; }
 
         public OpenRecordingViewModel OpenRecordingViewModel { get; }
+
+        public AppThemeViewModel AppThemeViewModel { get; }
 
         public SavedSessionsViewModel SavedSessionsViewModel { get; }
 
@@ -75,6 +80,19 @@ namespace EtwSuite
         private async void Root_Loaded(object sender, RoutedEventArgs e)
         {
             Root.Loaded -= Root_Loaded;
+
+            try
+            {
+                await AppThemeViewModel.InitializeAsync(_loadCancellation.Token);
+                ApplyRequestedTheme(AppThemeViewModel.SelectedThemeMode);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                _suppressThemePersistence = false;
+            }
 
             try
             {
@@ -112,6 +130,37 @@ namespace EtwSuite
             {
                 await PromptForSavedSessionsDatabaseAsync();
             }
+        }
+
+        private async void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyRequestedTheme(AppThemeViewModel.SelectedThemeMode);
+            if (_suppressThemePersistence)
+            {
+                return;
+            }
+
+            try
+            {
+                await AppThemeViewModel.SaveThemeModeAsync(_loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                ConsumeProviderViewModel.ReportError($"Theme setting: {ex.Message}");
+            }
+        }
+
+        private void ApplyRequestedTheme(AppThemeMode themeMode)
+        {
+            Root.RequestedTheme = themeMode switch
+            {
+                AppThemeMode.Light => ElementTheme.Light,
+                AppThemeMode.Dark => ElementTheme.Dark,
+                _ => ElementTheme.Default
+            };
         }
 
         private async void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -244,36 +293,40 @@ namespace EtwSuite
             UpdateConsumeProviderMatchesVisibility();
         }
 
-        private async void StartStopConsumingButton_Click(object sender, RoutedEventArgs e)
+        private async void StartConsumingButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (ConsumeProviderViewModel.CanStop)
+                string? etlPath = null;
+                if (ConsumeProviderViewModel.IsEtlRecordingEnabled)
                 {
-                    await ConsumeProviderViewModel.StopAsync();
-                }
-                else
-                {
-                    string? etlPath = null;
-                    if (ConsumeProviderViewModel.IsEtlRecordingEnabled)
+                    nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                    etlPath = ShowSaveDialog(
+                        ownerHandle,
+                        "Record ETL",
+                        ConsumeProviderViewModel.GetDefaultEtlRecordingFileName(),
+                        ".etl",
+                        "ETL");
+                    if (string.IsNullOrWhiteSpace(etlPath))
                     {
-                        nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                        etlPath = ShowSaveDialog(
-                            ownerHandle,
-                            "Record ETL",
-                            ConsumeProviderViewModel.GetDefaultEtlRecordingFileName(),
-                            ".etl",
-                            "ETL");
-                        if (string.IsNullOrWhiteSpace(etlPath))
-                        {
-                            return;
-                        }
-
-                        ConsumeProviderViewModel.EtlRecordingPath = etlPath;
+                        return;
                     }
 
-                    await ConsumeProviderViewModel.StartAsync(etlPath, _loadCancellation.Token);
+                    ConsumeProviderViewModel.EtlRecordingPath = etlPath;
                 }
+
+                await ConsumeProviderViewModel.StartAsync(etlPath, _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private async void StopConsumingButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await ConsumeProviderViewModel.StopAsync();
             }
             catch (OperationCanceledException)
             {
@@ -412,6 +465,22 @@ namespace EtwSuite
         private void NextEventsPageButton_Click(object sender, RoutedEventArgs e)
         {
             ConsumeProviderViewModel.GoToNextPage();
+        }
+
+        private void ClearConsumeEventsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ConsumeProviderViewModel.ClearEvents();
+        }
+
+        private void ConsumeEventSortHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not string sortFieldText ||
+                !Enum.TryParse(sortFieldText, out LiveEventSortField sortField))
+            {
+                return;
+            }
+
+            ConsumeProviderViewModel.SortBy(sortField);
         }
 
         private async void ExportEventsButton_Click(object sender, RoutedEventArgs e)
