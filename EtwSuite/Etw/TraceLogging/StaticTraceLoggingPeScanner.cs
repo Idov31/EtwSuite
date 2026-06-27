@@ -293,18 +293,26 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
             return [];
         }
 
-        bool assignEventsToProvider = providers
+        bool hasSingleProvider = providers
             .Where(provider => provider.Id is not null)
             .Select(provider => provider.Id)
             .Distinct()
             .Count() == 1;
+
+        if (!hasSingleProvider && events.Count > 0)
+        {
+            diagnostics.Add(new TraceLoggingScanDiagnostic(
+                TraceLoggingDiagnosticSeverity.Info,
+                "Provider/event ownership is unresolved without call/reference analysis; showing all TraceLogging events found in this binary for each provider.",
+                sourcePath));
+        }
 
         return [.. providers.Select(provider => new TraceLoggingProviderInfo(
             provider.Name,
             provider.Id,
             provider.GroupId,
             sourcePath,
-            assignEventsToProvider ? events : [],
+            events,
             [],
             FromCache: false,
             SourceLength: 0,

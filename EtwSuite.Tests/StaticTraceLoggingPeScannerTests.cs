@@ -43,6 +43,31 @@ public sealed class StaticTraceLoggingPeScannerTests
         StringAssert.Contains(result.Diagnostics[0].Message, "Malformed TraceLogging event blob");
     }
 
+    [TestMethod]
+    public void ParseTraceLoggingMetadataForTests_PreservesEventsForMultiProviderBinaries()
+    {
+        using var stream = new MemoryStream();
+        WriteEtw0Header(stream);
+        WriteProviderBlob(
+            stream,
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            "Synthetic.Provider.One",
+            null);
+        WriteProviderBlob(
+            stream,
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            "Synthetic.Provider.Two",
+            null);
+        WriteEventBlob(stream);
+        stream.WriteByte(1);
+
+        var result = StaticTraceLoggingPeScanner.ParseTraceLoggingMetadataForTests(stream.ToArray());
+
+        Assert.AreEqual(2, result.Providers.Count);
+        Assert.IsTrue(result.Providers.All(provider => provider.Events.Count == 1));
+        Assert.IsTrue(result.Diagnostics.Any(diagnostic => diagnostic.Message.Contains("ownership is unresolved", StringComparison.Ordinal)));
+    }
+
     private static byte[] CreateTraceLoggingMetadata(Guid providerId, Guid groupId)
     {
         using var stream = new MemoryStream();
@@ -78,9 +103,14 @@ public sealed class StaticTraceLoggingPeScannerTests
 
     private static void WriteProviderBlob(Stream stream, Guid providerId, Guid? groupId)
     {
+        WriteProviderBlob(stream, providerId, "Synthetic.Provider", groupId);
+    }
+
+    private static void WriteProviderBlob(Stream stream, Guid providerId, string nameText, Guid? groupId)
+    {
         stream.WriteByte(4);
         stream.Write(providerId.ToByteArray());
-        byte[] name = Encoding.UTF8.GetBytes("Synthetic.Provider");
+        byte[] name = Encoding.UTF8.GetBytes(nameText);
         ushort traitsLength = groupId is null ? (ushort)0 : (ushort)19;
         WriteUInt16(stream, checked((ushort)(2 + name.Length + 1 + traitsLength)));
         stream.Write(name);
