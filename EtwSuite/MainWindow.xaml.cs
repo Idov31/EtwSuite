@@ -1,5 +1,6 @@
 using EtwSuite.Core;
 using EtwSuite.Etw;
+using EtwSuite.Etw.TraceLogging;
 using EtwSuite.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -23,11 +24,14 @@ namespace EtwSuite
             SetSystemBackdrop();
             SetWindowIcon();
 
-            var providerCatalog = new EtwProviderCatalog();
+            var traceLoggingCache = new FileTraceLoggingProviderCache();
+            var traceLoggingScanner = new StaticTraceLoggingPeScanner(traceLoggingCache);
+            var providerCatalog = new EtwProviderCatalog(traceLoggingCache);
             var recordingReader = new TraceEventRecordingReader();
             var sessionTemplateStore = new SqliteEtwSessionTemplateStore();
             var applicationSettings = new FileEtwSessionTemplateSettings();
             ProvidersViewModel = new ProvidersViewModel(providerCatalog);
+            TraceLoggingProvidersViewModel = new TraceLoggingProvidersViewModel(traceLoggingScanner, traceLoggingCache);
             ConsumeProviderViewModel = new ConsumeProviderViewModel(providerCatalog);
             OpenRecordingViewModel = new OpenRecordingViewModel(recordingReader);
             AppThemeViewModel = new AppThemeViewModel(applicationSettings);
@@ -37,6 +41,7 @@ namespace EtwSuite
                 ConsumeProviderViewModel);
 
             ListProvidersView.DataContext = ProvidersViewModel;
+            ListTraceLoggingProvidersView.DataContext = TraceLoggingProvidersViewModel;
             ConsumeProviderView.DataContext = ConsumeProviderViewModel;
             OpenRecordingView.DataContext = OpenRecordingViewModel;
             SavedSessionsView.DataContext = SavedSessionsViewModel;
@@ -47,6 +52,8 @@ namespace EtwSuite
         }
 
         public ProvidersViewModel ProvidersViewModel { get; }
+
+        public TraceLoggingProvidersViewModel TraceLoggingProvidersViewModel { get; }
 
         public ConsumeProviderViewModel ConsumeProviderViewModel { get; }
 
@@ -97,6 +104,7 @@ namespace EtwSuite
             try
             {
                 await ProvidersViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await TraceLoggingProvidersViewModel.InitializeAsync(_loadCancellation.Token);
                 await SavedSessionsViewModel.InitializeAsync(_loadCancellation.Token);
             }
             catch (OperationCanceledException)
@@ -122,6 +130,7 @@ namespace EtwSuite
         {
             string? tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
             ListProvidersView.Visibility = tag == "ListProviders" ? Visibility.Visible : Visibility.Collapsed;
+            ListTraceLoggingProvidersView.Visibility = tag == "ListTraceLoggingProviders" ? Visibility.Visible : Visibility.Collapsed;
             ConsumeProviderView.Visibility = tag == "ConsumeProvider" ? Visibility.Visible : Visibility.Collapsed;
             OpenRecordingView.Visibility = tag == "OpenRecording" ? Visibility.Visible : Visibility.Collapsed;
             SavedSessionsView.Visibility = tag == "SavedSessions" ? Visibility.Visible : Visibility.Collapsed;
@@ -237,6 +246,16 @@ namespace EtwSuite
             {
                 e.Handled = true;
             }
+        }
+
+        private void TraceLoggingProviderSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            TraceLoggingProvidersViewModel.ProviderSearchText = ((TextBox)sender).Text;
+        }
+
+        private void TraceLoggingSchemaSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            TraceLoggingProvidersViewModel.SchemaSearchText = ((TextBox)sender).Text;
         }
 
         private async void ProvidersListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -508,6 +527,109 @@ namespace EtwSuite
             }
         }
 
+        private async void AddTraceLoggingFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? selectedPath = ShowOpenDialog(
+                    ownerHandle,
+                    "Add TraceLogging PE file",
+                    new[]
+                    {
+                        new ComDlgFilterSpec { Name = "PE images", Spec = "*.exe;*.dll;*.sys" },
+                        new ComDlgFilterSpec { Name = "All files", Spec = "*.*" },
+                    });
+                if (string.IsNullOrWhiteSpace(selectedPath))
+                {
+                    return;
+                }
+
+                await TraceLoggingProvidersViewModel.AddPathAsync(
+                    selectedPath,
+                    TraceLoggingScanPathKind.File,
+                    _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async void AddTraceLoggingFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? selectedPath = ShowFolderDialog(ownerHandle, "Add TraceLogging scan folder");
+                if (string.IsNullOrWhiteSpace(selectedPath))
+                {
+                    return;
+                }
+
+                await TraceLoggingProvidersViewModel.AddPathAsync(
+                    selectedPath,
+                    TraceLoggingScanPathKind.Folder,
+                    _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async void RemoveTraceLoggingPathButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await TraceLoggingProvidersViewModel.RemoveSelectedPathAsync(_loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async void RefreshTraceLoggingProvidersButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await TraceLoggingProvidersViewModel.RefreshAsync(_loadCancellation.Token);
+                await ProvidersViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await ConsumeProviderViewModel.LoadProvidersAsync(_loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private void ConsumeTraceLoggingProviderButton_Click(object sender, RoutedEventArgs e)
+        {
+            EtwProviderInfo? provider = TraceLoggingProvidersViewModel.GetSelectedEtwProvider();
+            if (provider is null)
+            {
+                return;
+            }
+
+            ConsumeProviderViewModel.SelectProvider(provider);
+            Root.SelectedItem = ConsumeProviderNavigationItem;
+            UpdateConsumeProviderSearchText();
+            UpdateConsumeProviderMatchesVisibility();
+        }
+
         private async Task PromptForSavedSessionsDatabaseAsync()
         {
             var dialog = new ContentDialog
@@ -703,10 +825,32 @@ namespace EtwSuite
                 });
         }
 
+        private static string? ShowFolderDialog(nint ownerHandle, string title)
+        {
+            return ShowOpenDialog(
+                ownerHandle,
+                title,
+                [new ComDlgFilterSpec { Name = "Folders", Spec = "*.*" }],
+                FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.PickFolders);
+        }
+
         private static string? ShowOpenDialog(
             nint ownerHandle,
             string title,
             ComDlgFilterSpec[] filterSpecs)
+        {
+            return ShowOpenDialog(
+                ownerHandle,
+                title,
+                filterSpecs,
+                FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.FileMustExist);
+        }
+
+        private static string? ShowOpenDialog(
+            nint ownerHandle,
+            string title,
+            ComDlgFilterSpec[] filterSpecs,
+            FileOpenOptions options)
         {
             Type? dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
             if (dialogType is null)
@@ -722,7 +866,7 @@ namespace EtwSuite
             try
             {
                 dialog.SetTitle(title);
-                dialog.SetOptions(FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.FileMustExist);
+                dialog.SetOptions(options);
                 dialog.SetFileTypes((uint)filterSpecs.Length, filterSpecs);
 
                 int showResult = dialog.Show(ownerHandle);
@@ -861,6 +1005,7 @@ namespace EtwSuite
             PathMustExist = 0x00000800,
             ForceFileSystem = 0x00000040,
             FileMustExist = 0x00001000,
+            PickFolders = 0x00000020,
         }
 
         internal enum ShellItemDisplayName : uint

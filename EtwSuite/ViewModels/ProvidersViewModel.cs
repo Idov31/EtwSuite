@@ -128,7 +128,7 @@ public sealed class ProvidersViewModel : ObservableObject
             if (loadVersion == _schemaLoadVersion && SelectedProvider == provider && SelectedProviderDetails == details)
             {
                 details.SetSchema(schema);
-                SetProviderMissing(provider, schema.Events.Count == 0);
+                SetProviderMissing(provider, IsMissingStaticSchema(provider, schema));
             }
         }
         catch (OperationCanceledException)
@@ -178,6 +178,12 @@ public sealed class ProvidersViewModel : ObservableObject
             : Providers.FirstOrDefault();
 
         OnPropertyChanged(nameof(ProviderCountText));
+    }
+
+    public static bool IsMissingStaticSchema(EtwProviderInfo provider, EtwProviderSchema schema)
+    {
+        return schema.Events.Count == 0 &&
+            provider.SchemaSource is not (EtwProviderSchemaSource.TraceLogging or EtwProviderSchemaSource.Wpp);
     }
 
     private void SetProviderMissing(EtwProviderInfo provider, bool isMissing)

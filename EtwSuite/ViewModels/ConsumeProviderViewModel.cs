@@ -868,9 +868,19 @@ public sealed class ConsumeProviderViewModel : ObservableObject, IAsyncDisposabl
             Providers.Add(provider);
         }
 
-        SelectedProvider = previousSelection is not null && Providers.Contains(previousSelection)
+        SelectedProvider = previousSelection is not null &&
+            Providers.Contains(previousSelection) &&
+            IsExactProviderSearch(previousSelection)
             ? previousSelection
             : null;
+    }
+
+    private bool IsExactProviderSearch(EtwProviderInfo provider)
+    {
+        string searchText = SearchText.Trim();
+        return string.Equals(searchText, provider.Name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(searchText, provider.Id.ToString("D"), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(searchText.Trim('{', '}'), provider.Id.ToString("D"), StringComparison.OrdinalIgnoreCase);
     }
 
     private void ApplyEventFilter(bool resetPage)

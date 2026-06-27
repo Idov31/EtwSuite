@@ -24,7 +24,10 @@ public sealed record EtwSchemaEvent(
     byte Version,
     string Opcode,
     string Level,
-    IReadOnlyList<EtwSchemaParameter> Parameters);
+    IReadOnlyList<EtwSchemaParameter> Parameters,
+    ulong? Keyword = null,
+    byte? Channel = null,
+    string? SourcePath = null);
 
 public sealed record EtwProviderSchema(
     EtwProviderInfo Provider,

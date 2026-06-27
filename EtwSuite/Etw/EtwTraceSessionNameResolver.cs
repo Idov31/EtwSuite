@@ -59,7 +59,10 @@ internal static class EtwTraceSessionNameResolver
             sanitizedProviderName = "Provider";
         }
 
-        return $"{prefix}{sanitizedProviderName}-{Guid.NewGuid():N}"[..64];
+        string sessionName = $"{prefix}{sanitizedProviderName}-{Guid.NewGuid():N}";
+        return sessionName.Length <= 64
+            ? sessionName
+            : sessionName[..64];
     }
 }
 
