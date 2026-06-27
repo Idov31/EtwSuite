@@ -30,6 +30,7 @@ EtwSuite is an ETW inspection suite inspired by [EtwExplorer](https://github.com
 - Open a provider directly from the provider list in the consuming window.
 - Intel x64 and ARM64 compatibility.
 - Support consumption of special provider `Microsoft-Windows-Security-Auditing`.
+- Support TraceLogging providers.
 
 ## Filtering
 
@@ -148,6 +149,7 @@ With that being said, any low quality code PRs will be closed and ignored, and r
 
 ## Resources
 
+- [TLGMapper](https://github.com/AsuNa-jp/TLGMapper)
 - [EtwExplorer](https://github.com/zodiacon/EtwExplorer)
 - [krabsetw](https://github.com/microsoft/krabsetw)
 - [Event Tracing for Windows](https://learn.microsoft.com/windows/win32/etw/event-tracing-portal)

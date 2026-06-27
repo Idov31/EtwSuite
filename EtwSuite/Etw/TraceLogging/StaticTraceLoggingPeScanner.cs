@@ -7,7 +7,8 @@ namespace EtwSuite.Etw.TraceLogging;
 
 public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
 {
-    public const int ScannerVersion = 1;
+    public const int ScannerVersion = 2;
+    private const ulong DirectNearestWindowBytes = 0x200;
 
     private static readonly byte[] Etw0Signature = "ETW0"u8.ToArray();
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -46,11 +47,70 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         string sourcePath = "synthetic.bin")
     {
         var diagnostics = new List<TraceLoggingScanDiagnostic>();
+        ParsedMetadata parsedMetadata = ParseMetadataBlocks(
+            metadata,
+            fileOffsetBase: 0,
+            metadataAddressBase: 0,
+            sourcePath,
+            diagnostics);
+
         return CreateResult(
             sourcePath,
             sourceLength: metadata.Length,
             sourceLastWriteTimeUtc: DateTimeOffset.UnixEpoch,
-            providers: ParseMetadataBlocks(metadata, 0, sourcePath, diagnostics),
+            providers: CreateProviderInfos(
+                sourcePath,
+                parsedMetadata.Providers,
+                parsedMetadata.Events,
+                ResolveEventOwnership(
+                    sourcePath,
+                    Machine.Amd64,
+                    [],
+                    parsedMetadata.Providers,
+                    parsedMetadata.Events,
+                    diagnostics),
+                diagnostics),
+            diagnostics: diagnostics);
+    }
+
+    public static TraceLoggingScanResult ParseTraceLoggingSectionsForTests(
+        byte[] metadata,
+        ulong metadataAddress,
+        byte[] data,
+        ulong dataAddress,
+        byte[] code,
+        ulong codeAddress,
+        string sourcePath = "synthetic.bin")
+    {
+        var diagnostics = new List<TraceLoggingScanDiagnostic>();
+        ParsedMetadata parsedMetadata = ParseMetadataBlocks(
+            metadata,
+            fileOffsetBase: 0,
+            metadataAddressBase: metadataAddress,
+            sourcePath,
+            diagnostics);
+        SectionInfo[] sections =
+        [
+            new SectionInfo(dataAddress, data, IsExecutable: false),
+            new SectionInfo(codeAddress, code, IsExecutable: true),
+        ];
+
+        return CreateResult(
+            sourcePath,
+            sourceLength: metadata.Length + data.Length + code.Length,
+            sourceLastWriteTimeUtc: DateTimeOffset.UnixEpoch,
+            providers: CreateProviderInfos(
+                sourcePath,
+                parsedMetadata.Providers,
+                parsedMetadata.Events,
+                ResolveEventOwnership(
+                    sourcePath,
+                    Machine.Amd64,
+                    sections,
+                    parsedMetadata.Providers,
+                    parsedMetadata.Events,
+                    diagnostics),
+                diagnostics),
             diagnostics: diagnostics);
     }
 
@@ -218,7 +278,10 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
                     filePath));
             }
 
-            var providers = new List<TraceLoggingProviderInfo>();
+            ulong imageBase = peReader.PEHeaders.PEHeader?.ImageBase ?? 0;
+            var sections = new List<SectionInfo>();
+            var parsedProviders = new List<ParsedProvider>();
+            var parsedEvents = new List<ParsedEvent>();
             foreach (SectionHeader section in peReader.PEHeaders.SectionHeaders)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -241,18 +304,36 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
                     Array.Resize(ref sectionBytes, read);
                 }
 
-                providers.AddRange(ParseMetadataBlocks(
+                bool isExecutable = (section.SectionCharacteristics & SectionCharacteristics.MemExecute) != 0;
+                var sectionInfo = new SectionInfo(
+                    imageBase + (uint)section.VirtualAddress,
+                    sectionBytes,
+                    isExecutable);
+                sections.Add(sectionInfo);
+
+                ParsedMetadata parsedMetadata = ParseMetadataBlocks(
                     sectionBytes,
                     section.PointerToRawData,
+                    sectionInfo.Address,
                     filePath,
-                    diagnostics));
+                    diagnostics);
+                parsedProviders.AddRange(parsedMetadata.Providers);
+                parsedEvents.AddRange(parsedMetadata.Events);
             }
+
+            IReadOnlyDictionary<ParsedEvent, EventOwnership> ownership = ResolveEventOwnership(
+                filePath,
+                machine,
+                sections,
+                parsedProviders,
+                parsedEvents,
+                diagnostics);
 
             return CreateResult(
                 filePath,
                 fileInfo.Length,
                 fileInfo.LastWriteTimeUtc,
-                providers,
+                CreateProviderInfos(filePath, parsedProviders, parsedEvents, ownership, diagnostics),
                 diagnostics);
         }
         catch (BadImageFormatException ex)
@@ -269,14 +350,15 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         }
     }
 
-    private static IReadOnlyList<TraceLoggingProviderInfo> ParseMetadataBlocks(
+    private static ParsedMetadata ParseMetadataBlocks(
         byte[] bytes,
         int fileOffsetBase,
+        ulong metadataAddressBase,
         string sourcePath,
         List<TraceLoggingScanDiagnostic> diagnostics)
     {
         var providers = new List<ParsedProvider>();
-        var events = new List<TraceLoggingEventSchema>();
+        var events = new List<ParsedEvent>();
 
         for (int offset = 0; offset <= bytes.Length - 16; offset++)
         {
@@ -285,9 +367,27 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
                 continue;
             }
 
-            ParseBlobs(bytes, offset + 16, fileOffsetBase, sourcePath, providers, events, diagnostics);
+            ParseBlobs(
+                bytes,
+                offset + 16,
+                fileOffsetBase,
+                metadataAddressBase,
+                sourcePath,
+                providers,
+                events,
+                diagnostics);
         }
 
+        return new ParsedMetadata(providers, events);
+    }
+
+    private static IReadOnlyList<TraceLoggingProviderInfo> CreateProviderInfos(
+        string sourcePath,
+        IReadOnlyList<ParsedProvider> providers,
+        IReadOnlyList<ParsedEvent> events,
+        IReadOnlyDictionary<ParsedEvent, EventOwnership> ownership,
+        List<TraceLoggingScanDiagnostic> diagnostics)
+    {
         if (providers.Count == 0)
         {
             return [];
@@ -299,11 +399,12 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
             .Distinct()
             .Count() == 1;
 
-        if (!hasSingleProvider && events.Count > 0)
+        if (!hasSingleProvider && events.Count > 0 && ownership.Count < events.Count)
         {
+            int unresolvedCount = events.Count - ownership.Count;
             diagnostics.Add(new TraceLoggingScanDiagnostic(
                 TraceLoggingDiagnosticSeverity.Info,
-                "Provider/event ownership is unresolved without call/reference analysis; showing all TraceLogging events found in this binary for each provider.",
+                string.Create(CultureInfo.InvariantCulture, $"{unresolvedCount:N0} TraceLogging event(s) could not be correlated to a provider and are not shown as provider-owned schema."),
                 sourcePath));
         }
 
@@ -312,7 +413,14 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
             provider.Id,
             provider.GroupId,
             sourcePath,
-            events,
+            [.. events
+                .Where(schemaEvent =>
+                    ownership.TryGetValue(schemaEvent, out EventOwnership? eventOwnership) &&
+                    eventOwnership.Provider == provider)
+                .Select(schemaEvent => schemaEvent.Schema with
+                {
+                    OwnershipConfidence = ownership[schemaEvent].Confidence
+                })],
             [],
             FromCache: false,
             SourceLength: 0,
@@ -349,9 +457,10 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         byte[] bytes,
         int startOffset,
         int fileOffsetBase,
+        ulong metadataAddressBase,
         string sourcePath,
         List<ParsedProvider> providers,
-        List<TraceLoggingEventSchema> events,
+        List<ParsedEvent> events,
         List<TraceLoggingScanDiagnostic> diagnostics)
     {
         var reader = new BlobReader(bytes, startOffset);
@@ -378,7 +487,7 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
 
             if (blobType is 2 or 4)
             {
-                if (!TryParseProvider(blobType, reader, providers))
+                if (!TryParseProvider(blobType, reader, metadataAddressBase, providers))
                 {
                     diagnostics.Add(CreateMalformedDiagnostic(sourcePath, fileOffsetBase + blobStart, "provider"));
                     break;
@@ -390,7 +499,7 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
 
             if (blobType is 3 or 5 or 6)
             {
-                TraceLoggingEventSchema? schemaEvent = TryParseEvent(blobType, reader, sourcePath);
+                ParsedEvent? schemaEvent = TryParseEvent(blobType, reader, metadataAddressBase, sourcePath);
                 if (schemaEvent is null)
                 {
                     diagnostics.Add(CreateMalformedDiagnostic(sourcePath, fileOffsetBase + blobStart, "event"));
@@ -417,6 +526,7 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
     private static bool TryParseProvider(
         byte blobType,
         BlobReader reader,
+        ulong metadataAddressBase,
         List<ParsedProvider> providers)
     {
         Guid? providerId = null;
@@ -430,6 +540,7 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
             providerId = id;
         }
 
+        ulong registrationAddress = metadataAddressBase + (uint)reader.Position;
         if (!reader.TryReadUInt16(out ushort remaining) || remaining < 2)
         {
             return false;
@@ -448,7 +559,8 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         providers.Add(new ParsedProvider(
             string.IsNullOrWhiteSpace(name) ? "(unnamed TraceLogging provider)" : name,
             providerId,
-            groupId));
+            groupId,
+            registrationAddress));
         return true;
     }
 
@@ -468,8 +580,13 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         return null;
     }
 
-    private static TraceLoggingEventSchema? TryParseEvent(byte blobType, BlobReader reader, string sourcePath)
+    private static ParsedEvent? TryParseEvent(
+        byte blobType,
+        BlobReader reader,
+        ulong metadataAddressBase,
+        string sourcePath)
     {
+        ulong startAddress = metadataAddressBase + (uint)(reader.Position - 1);
         byte channel;
         byte level;
         byte opcode;
@@ -528,7 +645,7 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         IReadOnlyList<EtwSchemaParameter> fields = ParseEventFields(reader, end);
         reader.Position = end;
 
-        return new TraceLoggingEventSchema(
+        var schema = new TraceLoggingEventSchema(
             string.IsNullOrWhiteSpace(name) ? "(unnamed TraceLogging event)" : name,
             channel,
             level,
@@ -536,6 +653,11 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
             keyword,
             fields,
             sourcePath);
+
+        return new ParsedEvent(
+            schema,
+            startAddress,
+            metadataAddressBase + (uint)end);
     }
 
     private static IReadOnlyList<EtwSchemaParameter> ParseEventFields(BlobReader reader, int end)
@@ -594,6 +716,274 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         }
 
         return fields;
+    }
+
+    private static IReadOnlyDictionary<ParsedEvent, EventOwnership> ResolveEventOwnership(
+        string sourcePath,
+        Machine machine,
+        IReadOnlyList<SectionInfo> sections,
+        IReadOnlyList<ParsedProvider> providers,
+        IReadOnlyList<ParsedEvent> events,
+        List<TraceLoggingScanDiagnostic> diagnostics)
+    {
+        var ownership = new Dictionary<ParsedEvent, EventOwnership>();
+        ParsedProvider[] guidProviders = [.. providers.Where(provider => provider.Id is not null)];
+        if (guidProviders.Select(provider => provider.Id).Distinct().Count() == 1)
+        {
+            ParsedProvider provider = guidProviders[0];
+            foreach (ParsedEvent schemaEvent in events)
+            {
+                ownership[schemaEvent] = new EventOwnership(
+                    provider,
+                    TraceLoggingEventOwnershipConfidence.SingleProvider);
+            }
+
+            return ownership;
+        }
+
+        if (events.Count == 0 || providers.Count == 0)
+        {
+            return ownership;
+        }
+
+        if (machine != Machine.Amd64)
+        {
+            diagnostics.Add(new TraceLoggingScanDiagnostic(
+                TraceLoggingDiagnosticSeverity.Info,
+                $"TraceLogging event ownership resolution is not supported for {machine}; provider and event metadata were parsed without ownership.",
+                sourcePath));
+            return ownership;
+        }
+
+        Dictionary<ulong, ParsedProvider> providerAddressMap = BuildProviderAddressMap(sections, providers);
+        if (providerAddressMap.Count == 0)
+        {
+            diagnostics.Add(new TraceLoggingScanDiagnostic(
+                TraceLoggingDiagnosticSeverity.Info,
+                "No TraceLogging provider runtime structures were found; multi-provider event ownership remains unresolved.",
+                sourcePath));
+            return ownership;
+        }
+
+        EventRange[] eventRanges = [.. events.Select(schemaEvent => new EventRange(schemaEvent))];
+        foreach (SectionInfo section in sections.Where(section => section.IsExecutable))
+        {
+            IReadOnlyList<ProviderReference> providerReferences = FindProviderReferences(section, providerAddressMap);
+            if (providerReferences.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (EventReference eventReference in FindEventReferences(section, eventRanges))
+            {
+                ProviderReference? providerReference = providerReferences
+                    .Where(candidate => candidate.InstructionAddress < eventReference.InstructionAddress)
+                    .OrderByDescending(candidate => candidate.InstructionAddress)
+                    .FirstOrDefault();
+                TraceLoggingEventOwnershipConfidence confidence = TraceLoggingEventOwnershipConfidence.DirectPreceding;
+
+                if (providerReference is null)
+                {
+                    providerReference = providerReferences
+                        .Select(candidate => new
+                        {
+                            Reference = candidate,
+                            Distance = Distance(candidate.InstructionAddress, eventReference.InstructionAddress)
+                        })
+                        .Where(candidate => candidate.Distance <= DirectNearestWindowBytes)
+                        .OrderBy(candidate => candidate.Distance)
+                        .Select(candidate => candidate.Reference)
+                        .FirstOrDefault();
+                    confidence = TraceLoggingEventOwnershipConfidence.DirectNearest;
+                }
+
+                if (providerReference is null)
+                {
+                    continue;
+                }
+
+                if (!ownership.TryGetValue(eventReference.Event, out EventOwnership? existing) ||
+                    IsHigherConfidence(confidence, existing.Confidence))
+                {
+                    ownership[eventReference.Event] = new EventOwnership(providerReference.Provider, confidence);
+                }
+            }
+        }
+
+        return ownership;
+    }
+
+    private static Dictionary<ulong, ParsedProvider> BuildProviderAddressMap(
+        IReadOnlyList<SectionInfo> sections,
+        IReadOnlyList<ParsedProvider> providers)
+    {
+        var providerAddressMap = new Dictionary<ulong, ParsedProvider>();
+        var registrationLookup = providers
+            .Where(provider => provider.RegistrationAddress != 0)
+            .GroupBy(provider => provider.RegistrationAddress)
+            .ToDictionary(group => group.Key, group => group.First());
+
+        foreach (KeyValuePair<ulong, ParsedProvider> registration in registrationLookup)
+        {
+            providerAddressMap[registration.Key] = registration.Value;
+        }
+
+        var providerBases = new Dictionary<ulong, ParsedProvider>();
+        foreach (SectionInfo section in sections.Where(section => !section.IsExecutable))
+        {
+            foreach ((ulong address, ulong value) in EnumerateQwords(section))
+            {
+                if (!registrationLookup.TryGetValue(value, out ParsedProvider? provider))
+                {
+                    continue;
+                }
+
+                ulong providerBase = address >= 8 ? address - 8 : address;
+                providerBases[providerBase] = provider;
+                for (ulong offset = 0; offset < 64; offset += 8)
+                {
+                    providerAddressMap[providerBase + offset] = provider;
+                }
+            }
+        }
+
+        if (providerBases.Count == 0)
+        {
+            return providerAddressMap;
+        }
+
+        foreach (SectionInfo section in sections.Where(section => !section.IsExecutable))
+        {
+            foreach ((ulong address, ulong value) in EnumerateQwords(section))
+            {
+                if (providerAddressMap.ContainsKey(address))
+                {
+                    continue;
+                }
+
+                if (providerBases.TryGetValue(value, out ParsedProvider? provider))
+                {
+                    providerAddressMap[address] = provider;
+                }
+            }
+        }
+
+        return providerAddressMap;
+    }
+
+    private static IEnumerable<(ulong Address, ulong Value)> EnumerateQwords(SectionInfo section)
+    {
+        for (int offset = 0; offset <= section.Bytes.Length - sizeof(ulong); offset += sizeof(ulong))
+        {
+            yield return (section.Address + (uint)offset, BitConverter.ToUInt64(section.Bytes, offset));
+        }
+    }
+
+    private static IReadOnlyList<ProviderReference> FindProviderReferences(
+        SectionInfo section,
+        IReadOnlyDictionary<ulong, ParsedProvider> providerAddressMap)
+    {
+        var references = new List<ProviderReference>();
+        foreach (CodeReference codeReference in FindCodeReferences(section))
+        {
+            if (providerAddressMap.TryGetValue(codeReference.TargetAddress, out ParsedProvider? provider))
+            {
+                references.Add(new ProviderReference(codeReference.InstructionAddress, provider));
+            }
+        }
+
+        return references;
+    }
+
+    private static IReadOnlyList<EventReference> FindEventReferences(
+        SectionInfo section,
+        IReadOnlyList<EventRange> eventRanges)
+    {
+        var references = new List<EventReference>();
+        foreach (CodeReference codeReference in FindCodeReferences(section))
+        {
+            ParsedEvent? schemaEvent = eventRanges
+                .FirstOrDefault(range =>
+                    codeReference.TargetAddress >= range.StartAddress &&
+                    codeReference.TargetAddress < range.EndAddress)
+                ?.Event;
+            if (schemaEvent is not null)
+            {
+                references.Add(new EventReference(codeReference.InstructionAddress, schemaEvent));
+            }
+        }
+
+        return references;
+    }
+
+    private static IEnumerable<CodeReference> FindCodeReferences(SectionInfo section)
+    {
+        byte[] bytes = section.Bytes;
+        for (int offset = 0; offset < bytes.Length; offset++)
+        {
+            int instructionOffset = offset;
+            byte first = bytes[offset];
+            byte? rex = null;
+            if (first is >= 0x40 and <= 0x4F && offset + 1 < bytes.Length)
+            {
+                rex = first;
+                offset++;
+                first = bytes[offset];
+            }
+
+            if (first is >= 0xB8 and <= 0xBF &&
+                offset + 8 < bytes.Length &&
+                (rex is null || (rex.Value & 0x08) != 0))
+            {
+                yield return new CodeReference(
+                    section.Address + (uint)instructionOffset,
+                    BitConverter.ToUInt64(bytes, offset + 1));
+                offset += 8;
+                continue;
+            }
+
+            if (first is not (0x8B or 0x8D) ||
+                offset + 5 >= bytes.Length)
+            {
+                continue;
+            }
+
+            byte modRm = bytes[offset + 1];
+            if ((modRm & 0xC7) != 0x05)
+            {
+                continue;
+            }
+
+            int displacement = BitConverter.ToInt32(bytes, offset + 2);
+            ulong nextInstruction = section.Address + (uint)(offset + 6);
+            yield return new CodeReference(
+                section.Address + (uint)instructionOffset,
+                unchecked((ulong)((long)nextInstruction + displacement)));
+            offset += 5;
+        }
+    }
+
+    private static bool IsHigherConfidence(
+        TraceLoggingEventOwnershipConfidence candidate,
+        TraceLoggingEventOwnershipConfidence existing)
+    {
+        return Rank(candidate) < Rank(existing);
+
+        static int Rank(TraceLoggingEventOwnershipConfidence confidence)
+        {
+            return confidence switch
+            {
+                TraceLoggingEventOwnershipConfidence.SingleProvider => 0,
+                TraceLoggingEventOwnershipConfidence.DirectPreceding => 1,
+                TraceLoggingEventOwnershipConfidence.DirectNearest => 2,
+                _ => 3
+            };
+        }
+    }
+
+    private static ulong Distance(ulong left, ulong right)
+    {
+        return left >= right ? left - right : right - left;
     }
 
     private static IReadOnlyList<TraceLoggingProviderInfo> DeduplicateProviders(
@@ -741,7 +1131,39 @@ public sealed class StaticTraceLoggingPeScanner : ITraceLoggingProviderScanner
         };
     }
 
-    private sealed record ParsedProvider(string Name, Guid? Id, Guid? GroupId);
+    private sealed record SectionInfo(ulong Address, byte[] Bytes, bool IsExecutable);
+
+    private sealed record ParsedMetadata(
+        IReadOnlyList<ParsedProvider> Providers,
+        IReadOnlyList<ParsedEvent> Events);
+
+    private sealed record ParsedProvider(
+        string Name,
+        Guid? Id,
+        Guid? GroupId,
+        ulong RegistrationAddress);
+
+    private sealed record ParsedEvent(
+        TraceLoggingEventSchema Schema,
+        ulong StartAddress,
+        ulong EndAddress);
+
+    private sealed record EventOwnership(
+        ParsedProvider Provider,
+        TraceLoggingEventOwnershipConfidence Confidence);
+
+    private sealed record EventRange(ParsedEvent Event)
+    {
+        public ulong StartAddress => Event.StartAddress;
+
+        public ulong EndAddress => Event.EndAddress;
+    }
+
+    private sealed record CodeReference(ulong InstructionAddress, ulong TargetAddress);
+
+    private sealed record ProviderReference(ulong InstructionAddress, ParsedProvider Provider);
+
+    private sealed record EventReference(ulong InstructionAddress, ParsedEvent Event);
 
     private sealed class BlobReader
     {

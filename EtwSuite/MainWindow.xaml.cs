@@ -248,6 +248,16 @@ namespace EtwSuite
             }
         }
 
+        private void TraceLoggingProviderSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            TraceLoggingProvidersViewModel.ProviderSearchText = ((TextBox)sender).Text;
+        }
+
+        private void TraceLoggingSchemaSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            TraceLoggingProvidersViewModel.SchemaSearchText = ((TextBox)sender).Text;
+        }
+
         private async void ProvidersListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             try

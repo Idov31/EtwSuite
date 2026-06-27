@@ -7,8 +7,11 @@ public sealed class TraceLoggingProvidersViewModel : ObservableObject
 {
     private readonly ITraceLoggingProviderScanner _scanner;
     private readonly ITraceLoggingProviderCache _cache;
+    private IReadOnlyList<TraceLoggingProviderInfo> _allProviders = Array.Empty<TraceLoggingProviderInfo>();
     private TraceLoggingProviderViewModel? _selectedProvider;
     private TraceLoggingScanPathViewModel? _selectedScanPath;
+    private string _providerSearchText = string.Empty;
+    private string _schemaSearchText = string.Empty;
     private string? _statusMessage = "Configure files or folders to scan for static TraceLogging metadata.";
     private bool _isBusy;
     private bool _useCache = true;
@@ -28,6 +31,30 @@ public sealed class TraceLoggingProvidersViewModel : ObservableObject
     public ObservableCollection<TraceLoggingEventViewModel> Events { get; } = new();
 
     public ObservableCollection<string> Diagnostics { get; } = new();
+
+    public string ProviderSearchText
+    {
+        get => _providerSearchText;
+        set
+        {
+            if (SetProperty(ref _providerSearchText, value))
+            {
+                ApplyProviderFilter();
+            }
+        }
+    }
+
+    public string SchemaSearchText
+    {
+        get => _schemaSearchText;
+        set
+        {
+            if (SetProperty(ref _schemaSearchText, value))
+            {
+                RefreshSelectedProviderDetails();
+            }
+        }
+    }
 
     public TraceLoggingProviderViewModel? SelectedProvider
     {
@@ -198,14 +225,7 @@ public sealed class TraceLoggingProvidersViewModel : ObservableObject
 
     private void ApplyScanResult(TraceLoggingScanResult result)
     {
-        Guid? selectedProviderId = SelectedProvider?.Provider.Id;
-        string? selectedProviderName = SelectedProvider?.Provider.Name;
-
-        Providers.Clear();
-        foreach (TraceLoggingProviderInfo provider in result.Providers)
-        {
-            Providers.Add(new TraceLoggingProviderViewModel(provider));
-        }
+        _allProviders = result.Providers;
 
         Diagnostics.Clear();
         foreach (TraceLoggingScanDiagnostic diagnostic in result.Diagnostics)
@@ -213,6 +233,27 @@ public sealed class TraceLoggingProvidersViewModel : ObservableObject
             Diagnostics.Add(string.IsNullOrWhiteSpace(diagnostic.Path)
                 ? $"{diagnostic.Severity}: {diagnostic.Message}"
                 : $"{diagnostic.Severity}: {diagnostic.Message} ({diagnostic.Path})");
+        }
+
+        ApplyProviderFilter();
+    }
+
+    private void ApplyProviderFilter()
+    {
+        Guid? selectedProviderId = SelectedProvider?.Provider.Id;
+        string? selectedProviderName = SelectedProvider?.Provider.Name;
+        string searchText = ProviderSearchText.Trim();
+
+        IEnumerable<TraceLoggingProviderInfo> filteredProviders = _allProviders;
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            filteredProviders = filteredProviders.Where(provider => MatchesProviderSearch(provider, searchText));
+        }
+
+        Providers.Clear();
+        foreach (TraceLoggingProviderInfo provider in filteredProviders)
+        {
+            Providers.Add(new TraceLoggingProviderViewModel(provider));
         }
 
         SelectedProvider = Providers.FirstOrDefault(provider =>
@@ -231,10 +272,44 @@ public sealed class TraceLoggingProvidersViewModel : ObservableObject
             return;
         }
 
-        foreach (TraceLoggingEventSchema schemaEvent in SelectedProvider.Provider.Events)
+        string searchText = SchemaSearchText.Trim();
+        IEnumerable<TraceLoggingEventSchema> events = SelectedProvider.Provider.Events;
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            events = events.Where(schemaEvent => MatchesEventSearch(schemaEvent, searchText));
+        }
+
+        foreach (TraceLoggingEventSchema schemaEvent in events)
         {
             Events.Add(new TraceLoggingEventViewModel(schemaEvent));
         }
+    }
+
+    private static bool MatchesProviderSearch(TraceLoggingProviderInfo provider, string searchText)
+    {
+        return Contains(provider.Name, searchText) ||
+            Contains(provider.Id?.ToString("D") ?? string.Empty, searchText) ||
+            Contains(provider.GroupId?.ToString("D") ?? string.Empty, searchText) ||
+            Contains(provider.SourcePath, searchText) ||
+            Contains(Path.GetFileName(provider.SourcePath), searchText) ||
+            Contains(provider.FromCache ? "Cached" : "Scanned", searchText) ||
+            Contains($"{provider.Events.Count:N0} events", searchText);
+    }
+
+    private static bool MatchesEventSearch(TraceLoggingEventSchema schemaEvent, string searchText)
+    {
+        return Contains(schemaEvent.Name, searchText) ||
+            Contains(schemaEvent.Level.ToString(), searchText) ||
+            Contains(schemaEvent.Opcode.ToString(), searchText) ||
+            Contains(schemaEvent.Channel.ToString(), searchText) ||
+            Contains($"0x{schemaEvent.Keyword:X16}", searchText) ||
+            Contains(schemaEvent.OwnershipConfidence.ToString(), searchText) ||
+            schemaEvent.Fields.Any(field => Contains(field.Name, searchText) || Contains(field.Type, searchText));
+    }
+
+    private static bool Contains(string value, string searchText)
+    {
+        return value.Contains(searchText, StringComparison.CurrentCultureIgnoreCase);
     }
 
     private void OnPathPropertiesChanged()
@@ -299,6 +374,7 @@ public sealed class TraceLoggingEventViewModel
         Level = schemaEvent.Level;
         Opcode = schemaEvent.Opcode;
         Keyword = $"0x{schemaEvent.Keyword:X16}";
+        Confidence = schemaEvent.OwnershipConfidence.ToString();
         Fields = new ObservableCollection<EtwSchemaParameter>(schemaEvent.Fields);
     }
 
@@ -311,6 +387,8 @@ public sealed class TraceLoggingEventViewModel
     public byte Opcode { get; }
 
     public string Keyword { get; }
+
+    public string Confidence { get; }
 
     public ObservableCollection<EtwSchemaParameter> Fields { get; }
 

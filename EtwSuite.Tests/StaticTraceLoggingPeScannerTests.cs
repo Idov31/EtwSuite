@@ -1,4 +1,5 @@
 using System.Text;
+using EtwSuite.Core;
 using EtwSuite.Etw.TraceLogging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -22,6 +23,7 @@ public sealed class StaticTraceLoggingPeScannerTests
         Assert.AreEqual(providerId, result.Providers[0].Id);
         Assert.AreEqual(groupId, result.Providers[0].GroupId);
         Assert.AreEqual(1, result.Providers[0].Events.Count);
+        Assert.AreEqual(TraceLoggingEventOwnershipConfidence.SingleProvider, result.Providers[0].Events[0].OwnershipConfidence);
         Assert.AreEqual("SyntheticEvent", result.Providers[0].Events[0].Name);
         Assert.AreEqual((byte)11, result.Providers[0].Events[0].Channel);
         Assert.AreEqual((byte)5, result.Providers[0].Events[0].Level);
@@ -44,7 +46,7 @@ public sealed class StaticTraceLoggingPeScannerTests
     }
 
     [TestMethod]
-    public void ParseTraceLoggingMetadataForTests_PreservesEventsForMultiProviderBinaries()
+    public void ParseTraceLoggingMetadataForTests_DoesNotDuplicateEventsForMultiProviderBinariesWithoutOwnershipRefs()
     {
         using var stream = new MemoryStream();
         WriteEtw0Header(stream);
@@ -64,8 +66,57 @@ public sealed class StaticTraceLoggingPeScannerTests
         var result = StaticTraceLoggingPeScanner.ParseTraceLoggingMetadataForTests(stream.ToArray());
 
         Assert.AreEqual(2, result.Providers.Count);
-        Assert.IsTrue(result.Providers.All(provider => provider.Events.Count == 1));
-        Assert.IsTrue(result.Diagnostics.Any(diagnostic => diagnostic.Message.Contains("ownership is unresolved", StringComparison.Ordinal)));
+        Assert.IsTrue(result.Providers.All(provider => provider.Events.Count == 0));
+        Assert.IsTrue(result.Diagnostics.Any(diagnostic => diagnostic.Message.Contains("could not be correlated", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public void ParseTraceLoggingSectionsForTests_UsesDirectPrecedingProviderReference()
+    {
+        CreateMultiProviderMetadata(
+            out byte[] metadata,
+            out ulong firstRegistrationAddress,
+            out _,
+            out ulong eventAddress);
+        ulong dataAddress = 0x20000000;
+        byte[] data = CreateProviderData(dataAddress, firstRegistrationAddress);
+        byte[] code = CreateCodeReferences(dataAddress, eventAddress);
+
+        var result = StaticTraceLoggingPeScanner.ParseTraceLoggingSectionsForTests(
+            metadata,
+            0x10000000,
+            data,
+            dataAddress,
+            code,
+            0x30000000);
+
+        Assert.AreEqual(1, result.Providers[0].Events.Count);
+        Assert.AreEqual(0, result.Providers[1].Events.Count);
+        Assert.AreEqual(TraceLoggingEventOwnershipConfidence.DirectPreceding, result.Providers[0].Events[0].OwnershipConfidence);
+    }
+
+    [TestMethod]
+    public void ParseTraceLoggingSectionsForTests_UsesDirectNearestProviderReference()
+    {
+        CreateMultiProviderMetadata(
+            out byte[] metadata,
+            out ulong firstRegistrationAddress,
+            out _,
+            out ulong eventAddress);
+        ulong dataAddress = 0x20000000;
+        byte[] data = CreateProviderData(dataAddress, firstRegistrationAddress);
+        byte[] code = CreateCodeReferences(eventAddress, dataAddress);
+
+        var result = StaticTraceLoggingPeScanner.ParseTraceLoggingSectionsForTests(
+            metadata,
+            0x10000000,
+            data,
+            dataAddress,
+            code,
+            0x30000000);
+
+        Assert.AreEqual(1, result.Providers[0].Events.Count);
+        Assert.AreEqual(TraceLoggingEventOwnershipConfidence.DirectNearest, result.Providers[0].Events[0].OwnershipConfidence);
     }
 
     private static byte[] CreateTraceLoggingMetadata(Guid providerId, Guid groupId)
@@ -92,6 +143,54 @@ public sealed class StaticTraceLoggingPeScannerTests
         return stream.ToArray();
     }
 
+    private static void CreateMultiProviderMetadata(
+        out byte[] metadata,
+        out ulong firstRegistrationAddress,
+        out ulong secondRegistrationAddress,
+        out ulong eventAddress)
+    {
+        const ulong metadataAddress = 0x10000000;
+        using var stream = new MemoryStream();
+        WriteEtw0Header(stream);
+        long firstRegistrationOffset = WriteProviderBlob(
+            stream,
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            "Synthetic.Provider.One",
+            null);
+        long secondRegistrationOffset = WriteProviderBlob(
+            stream,
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            "Synthetic.Provider.Two",
+            null);
+        long eventOffset = WriteEventBlob(stream);
+        stream.WriteByte(1);
+
+        metadata = stream.ToArray();
+        firstRegistrationAddress = metadataAddress + (ulong)firstRegistrationOffset;
+        secondRegistrationAddress = metadataAddress + (ulong)secondRegistrationOffset;
+        eventAddress = metadataAddress + (ulong)eventOffset;
+    }
+
+    private static byte[] CreateProviderData(ulong providerBaseAddress, ulong registrationAddress)
+    {
+        byte[] data = new byte[32];
+        BitConverter.GetBytes(registrationAddress).CopyTo(data, 8);
+        return data;
+    }
+
+    private static byte[] CreateCodeReferences(params ulong[] targets)
+    {
+        using var stream = new MemoryStream();
+        for (int index = 0; index < targets.Length; index++)
+        {
+            stream.WriteByte(0x48);
+            stream.WriteByte((byte)(0xB8 + index));
+            stream.Write(BitConverter.GetBytes(targets[index]));
+        }
+
+        return stream.ToArray();
+    }
+
     private static void WriteEtw0Header(Stream stream)
     {
         stream.Write("ETW0"u8);
@@ -101,15 +200,16 @@ public sealed class StaticTraceLoggingPeScannerTests
         WriteUInt64(stream, 0xBB8A052B88040E86UL);
     }
 
-    private static void WriteProviderBlob(Stream stream, Guid providerId, Guid? groupId)
+    private static long WriteProviderBlob(Stream stream, Guid providerId, Guid? groupId)
     {
-        WriteProviderBlob(stream, providerId, "Synthetic.Provider", groupId);
+        return WriteProviderBlob(stream, providerId, "Synthetic.Provider", groupId);
     }
 
-    private static void WriteProviderBlob(Stream stream, Guid providerId, string nameText, Guid? groupId)
+    private static long WriteProviderBlob(Stream stream, Guid providerId, string nameText, Guid? groupId)
     {
         stream.WriteByte(4);
         stream.Write(providerId.ToByteArray());
+        long registrationOffset = stream.Position;
         byte[] name = Encoding.UTF8.GetBytes(nameText);
         ushort traitsLength = groupId is null ? (ushort)0 : (ushort)19;
         WriteUInt16(stream, checked((ushort)(2 + name.Length + 1 + traitsLength)));
@@ -121,10 +221,13 @@ public sealed class StaticTraceLoggingPeScannerTests
             stream.WriteByte(1);
             stream.Write(groupId.Value.ToByteArray());
         }
+
+        return registrationOffset;
     }
 
-    private static void WriteEventBlob(Stream stream)
+    private static long WriteEventBlob(Stream stream)
     {
+        long eventOffset = stream.Position;
         stream.WriteByte(3);
         stream.WriteByte(11);
         stream.WriteByte(5);
@@ -142,6 +245,7 @@ public sealed class StaticTraceLoggingPeScannerTests
         byte[] payloadBytes = payload.ToArray();
         WriteUInt16(stream, checked((ushort)(2 + payloadBytes.Length)));
         stream.Write(payloadBytes);
+        return eventOffset;
     }
 
     private static void WriteUInt16(Stream stream, ushort value)

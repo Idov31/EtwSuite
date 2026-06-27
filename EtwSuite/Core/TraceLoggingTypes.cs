@@ -13,6 +13,14 @@ public enum TraceLoggingDiagnosticSeverity
     Error
 }
 
+public enum TraceLoggingEventOwnershipConfidence
+{
+    Unknown,
+    SingleProvider,
+    DirectPreceding,
+    DirectNearest
+}
+
 public sealed record TraceLoggingScanPath(
     string Path,
     TraceLoggingScanPathKind Kind);
@@ -29,7 +37,8 @@ public sealed record TraceLoggingEventSchema(
     byte Opcode,
     ulong Keyword,
     IReadOnlyList<EtwSchemaParameter> Fields,
-    string SourcePath);
+    string SourcePath,
+    TraceLoggingEventOwnershipConfidence OwnershipConfidence = TraceLoggingEventOwnershipConfidence.Unknown);
 
 public sealed record TraceLoggingProviderInfo(
     string Name,
