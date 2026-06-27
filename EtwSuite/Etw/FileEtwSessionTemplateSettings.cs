@@ -69,5 +69,14 @@ public sealed class FileEtwSessionTemplateSettings(string settingsPath) : IEtwAp
         public string? SavedSessionsDatabasePath { get; set; }
 
         public string? ThemeMode { get; set; }
+
+        public List<TraceLoggingScanPathDto> TraceLoggingPaths { get; set; } = [];
+    }
+
+    private sealed class TraceLoggingScanPathDto
+    {
+        public string Path { get; set; } = string.Empty;
+
+        public TraceLoggingScanPathKind Kind { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 using EtwSuite.Core;
 using EtwSuite.Etw;
+using EtwSuite.Etw.TraceLogging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace EtwSuite.Tests;
@@ -58,6 +59,66 @@ public sealed class FileEtwApplicationSettingsTests
             var settings = new FileEtwSessionTemplateSettings(settingsPath);
 
             Assert.AreEqual(AppThemeMode.System, await settings.LoadThemeModeAsync(CancellationToken.None));
+        }
+        finally
+        {
+            DeleteSettingsPath(settingsPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task SaveThemeModeAsync_PreservesTraceLoggingPaths()
+    {
+        string settingsPath = CreateSettingsPath();
+        string cachePath = Path.Combine(Path.GetDirectoryName(settingsPath)!, "tracelogging-cache.json");
+        try
+        {
+            var traceLoggingCache = new FileTraceLoggingProviderCache(settingsPath, cachePath);
+            var settings = new FileEtwSessionTemplateSettings(settingsPath);
+            var paths = new[]
+            {
+                new TraceLoggingScanPath(@"C:\Windows\System32\ntoskrnl.exe", TraceLoggingScanPathKind.File)
+            };
+
+            await traceLoggingCache.SaveConfiguredPathsAsync(paths, CancellationToken.None);
+            await settings.SaveThemeModeAsync(AppThemeMode.Dark, CancellationToken.None);
+
+            IReadOnlyList<TraceLoggingScanPath> loadedPaths =
+                await traceLoggingCache.LoadConfiguredPathsAsync(CancellationToken.None);
+            Assert.AreEqual(1, loadedPaths.Count);
+            Assert.AreEqual(paths[0], loadedPaths[0]);
+        }
+        finally
+        {
+            DeleteSettingsPath(settingsPath);
+        }
+    }
+
+    [TestMethod]
+    public async Task FileTraceLoggingProviderCache_RoundTripsCachedResult()
+    {
+        string settingsPath = CreateSettingsPath();
+        string cachePath = Path.Combine(Path.GetDirectoryName(settingsPath)!, "tracelogging-cache.json");
+        try
+        {
+            var cache = new FileTraceLoggingProviderCache(settingsPath, cachePath);
+            var provider = new TraceLoggingProviderInfo(
+                "TraceLogging.Provider",
+                Guid.Parse("99999999-9999-9999-9999-999999999999"),
+                null,
+                @"C:\Windows\System32\provider.dll",
+                [],
+                [],
+                FromCache: false,
+                SourceLength: 10,
+                SourceLastWriteTimeUtc: DateTimeOffset.UnixEpoch);
+
+            await cache.SaveCachedResultAsync(new TraceLoggingScanResult([provider], []), CancellationToken.None);
+
+            TraceLoggingScanResult loaded = await cache.LoadCachedResultAsync(CancellationToken.None);
+            Assert.AreEqual(1, loaded.Providers.Count);
+            Assert.AreEqual(provider.Name, loaded.Providers[0].Name);
+            Assert.IsTrue(loaded.Providers[0].FromCache);
         }
         finally
         {
