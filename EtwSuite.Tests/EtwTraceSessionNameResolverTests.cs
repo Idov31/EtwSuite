@@ -89,6 +89,19 @@ public sealed class EtwTraceSessionNameResolverTests
     }
 
     [TestMethod]
+    public void ResolveSession_GeneratesStoppableSessionNameForShortTraceLoggingProvider()
+    {
+        EtwTraceSessionDescriptor session = EtwTraceSessionNameResolver.ResolveSession(
+            new EtwProviderEnableOptions("AttackSurfaceMonitor", Guid.NewGuid()),
+            "EtwSuite-",
+            48);
+
+        StringAssert.StartsWith(session.SessionName, "EtwSuite-AttackSurfaceMonitor-");
+        Assert.IsTrue(session.SessionName.Length <= 64);
+        Assert.IsTrue(session.CanStopSession);
+    }
+
+    [TestMethod]
     public async Task StartAsync_RejectsEtlRecordingForNonStoppableSpecialSession()
     {
         string filePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.etl");

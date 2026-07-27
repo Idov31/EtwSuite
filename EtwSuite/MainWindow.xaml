@@ -30,6 +30,20 @@
             </controls:Grid>
         </controls:NavigationView.PaneHeader>
 
+        <controls:NavigationView.PaneFooter>
+            <controls:StackPanel Padding="12,8" Spacing="4">
+                <controls:TextBlock
+                    FontWeight="SemiBold"
+                    Text="Theme" />
+                <controls:ComboBox
+                    x:Name="ThemeModeComboBox"
+                    MinWidth="160"
+                    ItemsSource="{Binding ThemeModes}"
+                    SelectedItem="{Binding SelectedThemeMode, Mode=TwoWay}"
+                    SelectionChanged="ThemeModeComboBox_SelectionChanged" />
+            </controls:StackPanel>
+        </controls:NavigationView.PaneFooter>
+
         <controls:NavigationView.MenuItems>
             <controls:NavigationViewItem
                 x:Name="ListProvidersNavigationItem"
@@ -38,6 +52,14 @@
                 Tag="ListProviders">
                 <controls:NavigationViewItem.Icon>
                     <controls:SymbolIcon Symbol="List" />
+                </controls:NavigationViewItem.Icon>
+            </controls:NavigationViewItem>
+            <controls:NavigationViewItem
+                x:Name="ListTraceLoggingProvidersNavigationItem"
+                Content="List TraceLogging Providers"
+                Tag="ListTraceLoggingProviders">
+                <controls:NavigationViewItem.Icon>
+                    <controls:FontIcon Glyph="&#xE8B7;" />
                 </controls:NavigationViewItem.Icon>
             </controls:NavigationViewItem>
             <controls:NavigationViewItem
@@ -321,6 +343,336 @@
             </controls:Grid>
 
             <controls:Grid
+                x:Name="ListTraceLoggingProvidersView"
+                RowSpacing="12"
+                Visibility="Collapsed">
+                <controls:Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </controls:Grid.RowDefinitions>
+
+                <controls:StackPanel Spacing="4">
+                    <controls:TextBlock
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        Text="List TraceLogging Providers" />
+                    <controls:TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding ProviderCountText}" />
+                    <controls:TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding StatusMessage}"
+                        TextWrapping="Wrap" />
+                </controls:StackPanel>
+
+                <controls:StackPanel
+                    Grid.Row="1"
+                    Margin="0,0,0,8"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <controls:Button
+                        Click="AddTraceLoggingFileButton_Click"
+                        Content="Add file" />
+                    <controls:Button
+                        Click="AddTraceLoggingFolderButton_Click"
+                        Content="Add folder" />
+                    <controls:Button
+                        Click="RemoveTraceLoggingPathButton_Click"
+                        Content="Remove"
+                        IsEnabled="{Binding CanRemovePath}" />
+                    <controls:Button
+                        Click="RefreshTraceLoggingProvidersButton_Click"
+                        Content="Refresh"
+                        IsEnabled="{Binding CanRefresh}" />
+                    <controls:CheckBox
+                        VerticalAlignment="Center"
+                        Content="Use cache"
+                        IsChecked="{Binding UseCache, Mode=TwoWay}" />
+                    <controls:Button
+                        Click="ConsumeTraceLoggingProviderButton_Click"
+                        Content="Consume selected"
+                        IsEnabled="{Binding CanConsumeSelectedProvider}" />
+                </controls:StackPanel>
+
+                <controls:Grid
+                    Grid.Row="2"
+                    ColumnSpacing="16">
+                    <controls:Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320" />
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="3*" />
+                    </controls:Grid.ColumnDefinitions>
+                    <controls:Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                    </controls:Grid.RowDefinitions>
+
+                    <controls:Grid RowSpacing="8">
+                        <controls:Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </controls:Grid.RowDefinitions>
+                        <controls:TextBlock
+                            FontWeight="SemiBold"
+                            Text="Configured paths" />
+                        <controls:ListView
+                            Grid.Row="1"
+                            ItemsSource="{Binding ScanPaths}"
+                            SelectedItem="{Binding SelectedScanPath, Mode=TwoWay}"
+                            SelectionMode="Single">
+                            <controls:ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <controls:StackPanel Padding="4" Spacing="3">
+                                        <controls:TextBlock
+                                            FontWeight="SemiBold"
+                                            Text="{Binding KindText}" />
+                                        <controls:TextBlock
+                                            FontSize="12"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            IsTextSelectionEnabled="True"
+                                            Text="{Binding Path}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </controls:StackPanel>
+                                </DataTemplate>
+                            </controls:ListView.ItemTemplate>
+                        </controls:ListView>
+                    </controls:Grid>
+
+                    <controls:Grid
+                        Grid.Column="1"
+                        RowSpacing="8">
+                        <controls:Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </controls:Grid.RowDefinitions>
+                        <controls:TextBlock
+                            FontWeight="SemiBold"
+                            Text="Providers" />
+
+                        <controls:TextBox
+                            Grid.Row="1"
+                            Header="Search"
+                            PlaceholderText="Provider name, GUID, group, source, events, or cache"
+                            TextChanged="TraceLoggingProviderSearchTextBox_TextChanged" />
+
+                        <controls:Border
+                            Grid.Row="2"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:ListView
+                                ItemsSource="{Binding Providers}"
+                                SelectedItem="{Binding SelectedProvider, Mode=TwoWay}"
+                                SelectionMode="Single">
+                                <controls:ListView.ItemContainerStyle>
+                                    <Style TargetType="controls:ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="0" />
+                                    </Style>
+                                </controls:ListView.ItemContainerStyle>
+                                <controls:ListView.Header>
+                                    <controls:Grid
+                                        Padding="12,8"
+                                        ColumnSpacing="12"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <controls:Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="80" />
+                                        </controls:Grid.ColumnDefinitions>
+                                        <controls:TextBlock FontWeight="SemiBold" Text="Name" />
+                                        <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="GUID" />
+                                        <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Group" />
+                                        <controls:TextBlock Grid.Column="3" FontWeight="SemiBold" Text="Source" />
+                                        <controls:TextBlock Grid.Column="4" FontWeight="SemiBold" Text="Events" />
+                                        <controls:TextBlock Grid.Column="5" FontWeight="SemiBold" Text="Cache" />
+                                    </controls:Grid>
+                                </controls:ListView.Header>
+                                <controls:ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <controls:Grid
+                                            MinHeight="36"
+                                            Padding="12,6"
+                                            ColumnSpacing="12">
+                                            <controls:Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="80" />
+                                            </controls:Grid.ColumnDefinitions>
+                                            <controls:TextBlock FontWeight="SemiBold" IsTextSelectionEnabled="True" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="1" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="{Binding IdText}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="2" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="{Binding GroupIdText}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="3" IsTextSelectionEnabled="True" Text="{Binding SourceFileName}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="4" IsTextSelectionEnabled="True" Text="{Binding EventCountText}" TextTrimming="CharacterEllipsis" />
+                                            <controls:TextBlock Grid.Column="5" IsTextSelectionEnabled="True" Text="{Binding CacheStatus}" TextTrimming="CharacterEllipsis" />
+                                        </controls:Grid>
+                                    </DataTemplate>
+                                </controls:ListView.ItemTemplate>
+                            </controls:ListView>
+                        </controls:Border>
+                    </controls:Grid>
+
+                    <controls:Grid
+                        Grid.Column="2"
+                        RowSpacing="8">
+                        <controls:Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </controls:Grid.RowDefinitions>
+
+                        <controls:StackPanel
+                            DataContext="{Binding SelectedProvider}"
+                            Spacing="4">
+                            <controls:TextBlock
+                                FontSize="20"
+                                FontWeight="SemiBold"
+                                IsTextSelectionEnabled="True"
+                                Text="{Binding Name}"
+                                TextWrapping="Wrap" />
+                            <controls:TextBlock
+                                FontFamily="Consolas"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                IsTextSelectionEnabled="True"
+                                Text="{Binding IdText}"
+                                TextWrapping="Wrap" />
+                            <controls:TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                IsTextSelectionEnabled="True"
+                                Text="{Binding GroupIdText}"
+                                TextWrapping="Wrap" />
+                            <controls:TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                IsTextSelectionEnabled="True"
+                                Text="{Binding SourcePath}"
+                                TextWrapping="Wrap" />
+                            <controls:TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{Binding CacheStatus}" />
+                        </controls:StackPanel>
+
+                        <controls:TextBlock
+                            Grid.Row="1"
+                            FontWeight="SemiBold"
+                            Text="Events" />
+
+                        <controls:TextBox
+                            Grid.Row="2"
+                            Header="Search schema"
+                            PlaceholderText="Event, level, opcode, channel, keyword, confidence, field, or type"
+                            TextChanged="TraceLoggingSchemaSearchTextBox_TextChanged" />
+
+                        <controls:Border
+                            Grid.Row="3"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <controls:ListView
+                                ItemsSource="{Binding Events}"
+                                SelectionMode="None">
+                                <controls:ListView.ItemContainerStyle>
+                                    <Style TargetType="controls:ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="0" />
+                                    </Style>
+                                </controls:ListView.ItemContainerStyle>
+                                <controls:ListView.Header>
+                                    <controls:Grid
+                                        Padding="0,8,12,8"
+                                        ColumnSpacing="12"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                                        <controls:Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="140" />
+                                        </controls:Grid.ColumnDefinitions>
+                                        <controls:TextBlock FontWeight="SemiBold" Text="Name" />
+                                        <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Level" />
+                                        <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Opcode" />
+                                        <controls:TextBlock Grid.Column="3" FontWeight="SemiBold" Text="Channel" />
+                                        <controls:TextBlock Grid.Column="4" FontWeight="SemiBold" Text="Keyword" />
+                                        <controls:TextBlock Grid.Column="5" FontWeight="SemiBold" Text="Confidence" />
+                                    </controls:Grid>
+                                </controls:ListView.Header>
+                                <controls:ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <controls:Expander
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch">
+                                            <controls:Expander.Header>
+                                                <controls:Grid
+                                                    MinHeight="36"
+                                                    Padding="48,6,12,6"
+                                                    ColumnSpacing="12">
+                                                    <controls:Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="2*" />
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="160" />
+                                                        <ColumnDefinition Width="140" />
+                                                    </controls:Grid.ColumnDefinitions>
+                                                    <controls:TextBlock FontWeight="SemiBold" IsTextSelectionEnabled="True" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                    <controls:TextBlock Grid.Column="1" IsTextSelectionEnabled="True" Text="{Binding Level}" />
+                                                    <controls:TextBlock Grid.Column="2" IsTextSelectionEnabled="True" Text="{Binding Opcode}" />
+                                                    <controls:TextBlock Grid.Column="3" IsTextSelectionEnabled="True" Text="{Binding Channel}" />
+                                                    <controls:TextBlock Grid.Column="4" FontFamily="Consolas" IsTextSelectionEnabled="True" Text="{Binding Keyword}" TextTrimming="CharacterEllipsis" />
+                                                    <controls:TextBlock Grid.Column="5" IsTextSelectionEnabled="True" Text="{Binding Confidence}" TextTrimming="CharacterEllipsis" />
+                                                </controls:Grid>
+                                            </controls:Expander.Header>
+                                            <controls:StackPanel Padding="48,0,12,12" Spacing="6">
+                                                <controls:TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding FieldCountText}" />
+                                                <controls:ItemsControl ItemsSource="{Binding Fields}">
+                                                    <controls:ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <controls:Grid Padding="0,3,0,3" ColumnSpacing="12">
+                                                                <controls:Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </controls:Grid.ColumnDefinitions>
+                                                                <controls:TextBlock IsTextSelectionEnabled="True" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                                <controls:TextBlock Grid.Column="1" HorizontalAlignment="Right" IsTextSelectionEnabled="True" Text="{Binding Type}" TextTrimming="CharacterEllipsis" />
+                                                            </controls:Grid>
+                                                        </DataTemplate>
+                                                    </controls:ItemsControl.ItemTemplate>
+                                                </controls:ItemsControl>
+                                            </controls:StackPanel>
+                                        </controls:Expander>
+                                    </DataTemplate>
+                                </controls:ListView.ItemTemplate>
+                            </controls:ListView>
+                        </controls:Border>
+
+                        <controls:ItemsControl
+                            Grid.Row="4"
+                            MaxHeight="96"
+                            ItemsSource="{Binding Diagnostics}">
+                            <controls:ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <controls:TextBlock
+                                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                        Text="{Binding}"
+                                        TextWrapping="Wrap" />
+                                </DataTemplate>
+                            </controls:ItemsControl.ItemTemplate>
+                        </controls:ItemsControl>
+                    </controls:Grid>
+                </controls:Grid>
+            </controls:Grid>
+
+            <controls:Grid
                 x:Name="ConsumeProviderView"
                 RowSpacing="12"
                 Visibility="Collapsed">
@@ -357,6 +709,8 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                     </controls:Grid.ColumnDefinitions>
                     <controls:Grid.RowDefinitions>
@@ -375,39 +729,53 @@
                     <controls:Button
                         Grid.Column="1"
                         VerticalAlignment="Bottom"
-                        Click="StartStopConsumingButton_Click"
-                        Content="{Binding StartStopText}"
-                        IsEnabled="{Binding CanStartOrStop}" />
+                        Click="StartConsumingButton_Click"
+                        Content="Start Consuming"
+                        IsEnabled="{Binding CanStart}" />
+
+                    <controls:Button
+                        Grid.Column="2"
+                        VerticalAlignment="Bottom"
+                        Click="StopConsumingButton_Click"
+                        Content="Stop"
+                        IsEnabled="{Binding CanStop}" />
+
+                    <controls:Button
+                        Grid.Column="3"
+                        VerticalAlignment="Bottom"
+                        Click="ClearConsumeEventsButton_Click"
+                        Content="Clear"
+                        IsEnabled="{Binding CanClearEvents}" />
 
                     <controls:ComboBox
-                        Grid.Column="2"
+                        Grid.Column="4"
                         VerticalAlignment="Bottom"
                         Header="Export to"
                         ItemsSource="{Binding ExportFormats}"
                         SelectedItem="{Binding SelectedExportFormat, Mode=TwoWay}" />
 
                     <controls:Button
-                        Grid.Column="3"
+                        Grid.Column="5"
                         VerticalAlignment="Bottom"
                         Click="ExportEventsButton_Click"
                         Content="Export"
                         IsEnabled="{Binding CanExport}" />
 
                     <controls:CheckBox
-                        Grid.Column="4"
+                        Grid.Column="6"
                         VerticalAlignment="Bottom"
                         Content="Record ETL"
                         IsChecked="{Binding IsEtlRecordingEnabled, Mode=TwoWay}" />
 
                     <controls:Button
-                        Grid.Column="5"
+                        Grid.Column="7"
                         VerticalAlignment="Bottom"
                         Click="OpenLastRecordingButton_Click"
                         Content="Open recorded"
                         IsEnabled="{Binding CanOpenLastRecording}" />
 
                     <controls:StackPanel
-                        Grid.Column="6"
+                        Grid.Column="8"
                         VerticalAlignment="Bottom"
                         Spacing="2">
                         <controls:TextBlock Text="{Binding TotalEventCountText}" />
@@ -454,7 +822,7 @@
 
                     <controls:TextBlock
                         Grid.Row="2"
-                        Grid.ColumnSpan="7"
+                        Grid.ColumnSpan="9"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Text="{Binding StatusMessage}"
                         TextWrapping="Wrap" />
@@ -549,18 +917,20 @@
                                     <ColumnDefinition Width="64" />
                                     <ColumnDefinition Width="80" />
                                     <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="80" />
                                     <ColumnDefinition Width="120" />
                                 </controls:Grid.ColumnDefinitions>
-                                <controls:TextBlock FontWeight="SemiBold" Text="Time" />
-                                <controls:TextBlock Grid.Column="1" FontWeight="SemiBold" Text="Provider" />
-                                <controls:TextBlock Grid.Column="2" FontWeight="SemiBold" Text="Event" />
-                                <controls:TextBlock Grid.Column="3" FontWeight="SemiBold" Text="ID" />
-                                <controls:TextBlock Grid.Column="4" FontWeight="SemiBold" Text="Version" />
-                                <controls:TextBlock Grid.Column="5" FontWeight="SemiBold" Text="Opcode" />
-                                <controls:TextBlock Grid.Column="6" FontWeight="SemiBold" Text="Level" />
-                                <controls:TextBlock Grid.Column="7" FontWeight="SemiBold" Text="PID" />
-                                <controls:TextBlock Grid.Column="8" FontWeight="SemiBold" Text="Process" />
-                                <controls:TextBlock Grid.Column="9" FontWeight="SemiBold" Text="Parameters" />
+                                <controls:Button Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding TimeSortHeader}" FontWeight="SemiBold" Tag="Time" />
+                                <controls:Button Grid.Column="1" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding ProviderSortHeader}" FontWeight="SemiBold" Tag="Provider" />
+                                <controls:Button Grid.Column="2" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding EventSortHeader}" FontWeight="SemiBold" Tag="Event" />
+                                <controls:Button Grid.Column="3" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding IdSortHeader}" FontWeight="SemiBold" Tag="Id" />
+                                <controls:Button Grid.Column="4" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding VersionSortHeader}" FontWeight="SemiBold" Tag="Version" />
+                                <controls:Button Grid.Column="5" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding OpcodeSortHeader}" FontWeight="SemiBold" Tag="Opcode" />
+                                <controls:Button Grid.Column="6" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding LevelSortHeader}" FontWeight="SemiBold" Tag="Level" />
+                                <controls:Button Grid.Column="7" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding ProcessIdSortHeader}" FontWeight="SemiBold" Tag="ProcessId" />
+                                <controls:Button Grid.Column="8" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding ProcessNameSortHeader}" FontWeight="SemiBold" Tag="ProcessName" />
+                                <controls:Button Grid.Column="9" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding ThreadIdSortHeader}" FontWeight="SemiBold" Tag="ThreadId" />
+                                <controls:Button Grid.Column="10" Padding="0" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0" Click="ConsumeEventSortHeader_Click" Content="{Binding ParametersSortHeader}" FontWeight="SemiBold" Tag="Parameters" />
                             </controls:Grid>
                         </controls:ListView.Header>
                         <controls:ListView.ItemTemplate>
@@ -584,6 +954,7 @@
                                                 <ColumnDefinition Width="64" />
                                                 <ColumnDefinition Width="80" />
                                                 <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="80" />
                                                 <ColumnDefinition Width="120" />
                                             </controls:Grid.ColumnDefinitions>
                                             <controls:TextBlock IsTextSelectionEnabled="True" Text="{Binding Time}" />
@@ -595,7 +966,8 @@
                                             <controls:TextBlock Grid.Column="6" IsTextSelectionEnabled="True" Text="{Binding Level}" />
                                             <controls:TextBlock Grid.Column="7" IsTextSelectionEnabled="True" Text="{Binding ProcessId}" />
                                             <controls:TextBlock Grid.Column="8" IsTextSelectionEnabled="True" Text="{Binding ProcessName}" TextTrimming="CharacterEllipsis" />
-                                            <controls:TextBlock Grid.Column="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding ParameterSummary}" />
+                                            <controls:TextBlock Grid.Column="9" IsTextSelectionEnabled="True" Text="{Binding ThreadId}" />
+                                            <controls:TextBlock Grid.Column="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding ParameterSummary}" />
                                         </controls:Grid>
                                     </controls:Expander.Header>
 

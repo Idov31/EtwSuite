@@ -143,6 +143,9 @@ public sealed class SchemaEventViewModel
         Version = schemaEvent.Version;
         Opcode = schemaEvent.Opcode;
         Level = schemaEvent.Level;
+        Keyword = schemaEvent.Keyword is null ? string.Empty : $"0x{schemaEvent.Keyword.Value:X16}";
+        Channel = schemaEvent.Channel?.ToString() ?? string.Empty;
+        SourcePath = schemaEvent.SourcePath ?? string.Empty;
         Parameters = new ObservableCollection<EtwSchemaParameter>(schemaEvent.Parameters);
     }
 
@@ -155,6 +158,12 @@ public sealed class SchemaEventViewModel
     public string Opcode { get; }
 
     public string Level { get; }
+
+    public string Keyword { get; }
+
+    public string Channel { get; }
+
+    public string SourcePath { get; }
 
     public ObservableCollection<EtwSchemaParameter> Parameters { get; }
 

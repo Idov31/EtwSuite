@@ -1,4 +1,5 @@
 using EtwSuite.Core;
+using EtwSuite.Etw.TraceLogging;
 using EtwSuite.Etw.Native;
 using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Session;
@@ -19,16 +20,99 @@ public sealed class EtwProviderEnumerationException(uint errorCode) : Exception(
 
 public sealed class EtwProviderCatalog : IEtwProviderCatalog
 {
-    public Task<IReadOnlyList<EtwProviderInfo>> EnumerateProvidersAsync(CancellationToken cancellationToken)
+    public const string TraceLoggingStaticSchemaDiagnostic = "TraceLogging providers usually do not expose a complete registered XML manifest. Static metadata is available only when EtwSuite has discovered and cached it from a PE image.";
+
+    private readonly ITraceLoggingProviderCache? _traceLoggingProviderCache;
+
+    public EtwProviderCatalog(ITraceLoggingProviderCache? traceLoggingProviderCache = null)
     {
-        return Task.Run(() => EnumerateProviders(cancellationToken), cancellationToken);
+        _traceLoggingProviderCache = traceLoggingProviderCache;
     }
 
-    public Task<EtwProviderSchema> GetProviderSchemaAsync(
+    public async Task<IReadOnlyList<EtwProviderInfo>> EnumerateProvidersAsync(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<EtwProviderInfo> providers = await Task.Run(() => EnumerateProviders(cancellationToken), cancellationToken);
+        if (_traceLoggingProviderCache is null)
+        {
+            return providers;
+        }
+
+        TraceLoggingScanResult cachedTraceLogging = await _traceLoggingProviderCache.LoadCachedResultAsync(cancellationToken);
+        return MergeWithTraceLoggingProviders(providers, cachedTraceLogging.Providers);
+    }
+
+    public async Task<EtwProviderSchema> GetProviderSchemaAsync(
         EtwProviderInfo provider,
         CancellationToken cancellationToken)
     {
-        return Task.Run(() => GetProviderSchema(provider, cancellationToken), cancellationToken);
+        if (provider.SchemaSource == EtwProviderSchemaSource.TraceLogging &&
+            _traceLoggingProviderCache is not null)
+        {
+            EtwProviderSchema? cachedSchema = await TryGetCachedTraceLoggingSchemaAsync(provider, cancellationToken);
+            if (cachedSchema is not null)
+            {
+                return cachedSchema;
+            }
+        }
+
+        return await Task.Run(() => GetProviderSchema(provider, cancellationToken), cancellationToken);
+    }
+
+    public static IReadOnlyList<EtwProviderInfo> MergeWithTraceLoggingProviders(
+        IReadOnlyList<EtwProviderInfo> providers,
+        IReadOnlyList<TraceLoggingProviderInfo> traceLoggingProviders)
+    {
+        var providersById = providers
+            .GroupBy(provider => provider.Id)
+            .ToDictionary(group => group.Key, group => group.First());
+        foreach (TraceLoggingProviderInfo traceLoggingProvider in traceLoggingProviders)
+        {
+            EtwProviderInfo? provider = traceLoggingProvider.ToEtwProviderInfo();
+            if (provider is null || providersById.ContainsKey(provider.Id))
+            {
+                continue;
+            }
+
+            providersById[provider.Id] = provider;
+        }
+
+        return [.. providersById.Values
+            .OrderBy(provider => provider.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(provider => provider.Id)];
+    }
+
+    private async Task<EtwProviderSchema?> TryGetCachedTraceLoggingSchemaAsync(
+        EtwProviderInfo provider,
+        CancellationToken cancellationToken)
+    {
+        TraceLoggingScanResult cachedTraceLogging = await _traceLoggingProviderCache!.LoadCachedResultAsync(cancellationToken);
+        TraceLoggingProviderInfo? traceLoggingProvider = cachedTraceLogging.Providers.FirstOrDefault(candidate =>
+            candidate.Id == provider.Id);
+        if (traceLoggingProvider is null || traceLoggingProvider.Events.Count == 0)
+        {
+            return null;
+        }
+
+        IReadOnlyList<EtwSchemaEvent> events = [.. traceLoggingProvider.Events.Select((schemaEvent, index) =>
+            new EtwSchemaEvent(
+                schemaEvent.Name,
+                checked((ushort)Math.Min(index, ushort.MaxValue)),
+                0,
+                schemaEvent.Opcode.ToString(CultureInfo.InvariantCulture),
+                schemaEvent.Level.ToString(CultureInfo.InvariantCulture),
+                schemaEvent.Fields,
+                schemaEvent.Keyword,
+                schemaEvent.Channel,
+                schemaEvent.SourcePath))];
+
+        IReadOnlyList<string> diagnostics = [.. traceLoggingProvider.Diagnostics
+            .Select(diagnostic => diagnostic.Message)
+            .Concat(cachedTraceLogging.Diagnostics
+                .Where(diagnostic => string.Equals(diagnostic.Path, traceLoggingProvider.SourcePath, StringComparison.OrdinalIgnoreCase))
+                .Select(diagnostic => diagnostic.Message))
+            .Distinct(StringComparer.Ordinal)];
+
+        return new EtwProviderSchema(provider, events, diagnostics);
     }
 
     private static IReadOnlyList<EtwProviderInfo> EnumerateProviders(CancellationToken cancellationToken)
@@ -135,7 +219,9 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
 
         if (provider.SchemaSource is EtwProviderSchemaSource.Wpp or EtwProviderSchemaSource.TraceLogging)
         {
-            diagnostics.Add($"{FormatSchemaSource(provider.SchemaSource)} providers usually do not expose a complete registered XML manifest. Event templates may require live event samples or external TMF/TraceLogging metadata.");
+            diagnostics.Add(provider.SchemaSource == EtwProviderSchemaSource.TraceLogging
+                ? TraceLoggingStaticSchemaDiagnostic
+                : $"{FormatSchemaSource(provider.SchemaSource)} providers usually do not expose a complete registered XML manifest. Event templates may require live event samples or external TMF/TraceLogging metadata.");
             return new EtwProviderSchema(provider, [], [.. diagnostics.Distinct(StringComparer.Ordinal)]);
         }
         List<TdhNative.EventDescriptor> eventDescriptors = EnumerateEventDescriptors(provider, diagnostics);

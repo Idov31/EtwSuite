@@ -1,5 +1,6 @@
 using EtwSuite.Core;
 using EtwSuite.Etw;
+using EtwSuite.Etw.TraceLogging;
 using EtwSuite.ViewModels;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -15,6 +16,7 @@ namespace EtwSuite
     {
         private readonly CancellationTokenSource _loadCancellation = new();
         private CancellationTokenSource? _schemaLoadCancellation;
+        private bool _suppressThemePersistence = true;
 
         public MainWindow()
         {
@@ -22,22 +24,28 @@ namespace EtwSuite
             SetSystemBackdrop();
             SetWindowIcon();
 
-            var providerCatalog = new EtwProviderCatalog();
+            var traceLoggingCache = new FileTraceLoggingProviderCache();
+            var traceLoggingScanner = new StaticTraceLoggingPeScanner(traceLoggingCache);
+            var providerCatalog = new EtwProviderCatalog(traceLoggingCache);
             var recordingReader = new TraceEventRecordingReader();
             var sessionTemplateStore = new SqliteEtwSessionTemplateStore();
-            var sessionTemplateSettings = new FileEtwSessionTemplateSettings();
+            var applicationSettings = new FileEtwSessionTemplateSettings();
             ProvidersViewModel = new ProvidersViewModel(providerCatalog);
+            TraceLoggingProvidersViewModel = new TraceLoggingProvidersViewModel(traceLoggingScanner, traceLoggingCache);
             ConsumeProviderViewModel = new ConsumeProviderViewModel(providerCatalog);
             OpenRecordingViewModel = new OpenRecordingViewModel(recordingReader);
+            AppThemeViewModel = new AppThemeViewModel(applicationSettings);
             SavedSessionsViewModel = new SavedSessionsViewModel(
                 sessionTemplateStore,
-                sessionTemplateSettings,
+                applicationSettings,
                 ConsumeProviderViewModel);
 
             ListProvidersView.DataContext = ProvidersViewModel;
+            ListTraceLoggingProvidersView.DataContext = TraceLoggingProvidersViewModel;
             ConsumeProviderView.DataContext = ConsumeProviderViewModel;
             OpenRecordingView.DataContext = OpenRecordingViewModel;
             SavedSessionsView.DataContext = SavedSessionsViewModel;
+            ThemeModeComboBox.DataContext = AppThemeViewModel;
             ProvidersViewModel.PropertyChanged += ProvidersViewModel_PropertyChanged;
 
             Closed += MainWindow_Closed;
@@ -45,9 +53,13 @@ namespace EtwSuite
 
         public ProvidersViewModel ProvidersViewModel { get; }
 
+        public TraceLoggingProvidersViewModel TraceLoggingProvidersViewModel { get; }
+
         public ConsumeProviderViewModel ConsumeProviderViewModel { get; }
 
         public OpenRecordingViewModel OpenRecordingViewModel { get; }
+
+        public AppThemeViewModel AppThemeViewModel { get; }
 
         public SavedSessionsViewModel SavedSessionsViewModel { get; }
 
@@ -78,7 +90,21 @@ namespace EtwSuite
 
             try
             {
+                await AppThemeViewModel.InitializeAsync(_loadCancellation.Token);
+                ApplyRequestedTheme(AppThemeViewModel.SelectedThemeMode);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                _suppressThemePersistence = false;
+            }
+
+            try
+            {
                 await ProvidersViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await TraceLoggingProvidersViewModel.InitializeAsync(_loadCancellation.Token);
                 await SavedSessionsViewModel.InitializeAsync(_loadCancellation.Token);
             }
             catch (OperationCanceledException)
@@ -104,6 +130,7 @@ namespace EtwSuite
         {
             string? tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
             ListProvidersView.Visibility = tag == "ListProviders" ? Visibility.Visible : Visibility.Collapsed;
+            ListTraceLoggingProvidersView.Visibility = tag == "ListTraceLoggingProviders" ? Visibility.Visible : Visibility.Collapsed;
             ConsumeProviderView.Visibility = tag == "ConsumeProvider" ? Visibility.Visible : Visibility.Collapsed;
             OpenRecordingView.Visibility = tag == "OpenRecording" ? Visibility.Visible : Visibility.Collapsed;
             SavedSessionsView.Visibility = tag == "SavedSessions" ? Visibility.Visible : Visibility.Collapsed;
@@ -112,6 +139,37 @@ namespace EtwSuite
             {
                 await PromptForSavedSessionsDatabaseAsync();
             }
+        }
+
+        private async void ThemeModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplyRequestedTheme(AppThemeViewModel.SelectedThemeMode);
+            if (_suppressThemePersistence)
+            {
+                return;
+            }
+
+            try
+            {
+                await AppThemeViewModel.SaveThemeModeAsync(_loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                ConsumeProviderViewModel.ReportError($"Theme setting: {ex.Message}");
+            }
+        }
+
+        private void ApplyRequestedTheme(AppThemeMode themeMode)
+        {
+            Root.RequestedTheme = themeMode switch
+            {
+                AppThemeMode.Light => ElementTheme.Light,
+                AppThemeMode.Dark => ElementTheme.Dark,
+                _ => ElementTheme.Default
+            };
         }
 
         private async void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -190,6 +248,16 @@ namespace EtwSuite
             }
         }
 
+        private void TraceLoggingProviderSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            TraceLoggingProvidersViewModel.ProviderSearchText = ((TextBox)sender).Text;
+        }
+
+        private void TraceLoggingSchemaSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            TraceLoggingProvidersViewModel.SchemaSearchText = ((TextBox)sender).Text;
+        }
+
         private async void ProvidersListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             try
@@ -244,36 +312,40 @@ namespace EtwSuite
             UpdateConsumeProviderMatchesVisibility();
         }
 
-        private async void StartStopConsumingButton_Click(object sender, RoutedEventArgs e)
+        private async void StartConsumingButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                if (ConsumeProviderViewModel.CanStop)
+                string? etlPath = null;
+                if (ConsumeProviderViewModel.IsEtlRecordingEnabled)
                 {
-                    await ConsumeProviderViewModel.StopAsync();
-                }
-                else
-                {
-                    string? etlPath = null;
-                    if (ConsumeProviderViewModel.IsEtlRecordingEnabled)
+                    nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                    etlPath = ShowSaveDialog(
+                        ownerHandle,
+                        "Record ETL",
+                        ConsumeProviderViewModel.GetDefaultEtlRecordingFileName(),
+                        ".etl",
+                        "ETL");
+                    if (string.IsNullOrWhiteSpace(etlPath))
                     {
-                        nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                        etlPath = ShowSaveDialog(
-                            ownerHandle,
-                            "Record ETL",
-                            ConsumeProviderViewModel.GetDefaultEtlRecordingFileName(),
-                            ".etl",
-                            "ETL");
-                        if (string.IsNullOrWhiteSpace(etlPath))
-                        {
-                            return;
-                        }
-
-                        ConsumeProviderViewModel.EtlRecordingPath = etlPath;
+                        return;
                     }
 
-                    await ConsumeProviderViewModel.StartAsync(etlPath, _loadCancellation.Token);
+                    ConsumeProviderViewModel.EtlRecordingPath = etlPath;
                 }
+
+                await ConsumeProviderViewModel.StartAsync(etlPath, _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private async void StopConsumingButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await ConsumeProviderViewModel.StopAsync();
             }
             catch (OperationCanceledException)
             {
@@ -414,6 +486,22 @@ namespace EtwSuite
             ConsumeProviderViewModel.GoToNextPage();
         }
 
+        private void ClearConsumeEventsButton_Click(object sender, RoutedEventArgs e)
+        {
+            ConsumeProviderViewModel.ClearEvents();
+        }
+
+        private void ConsumeEventSortHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not string sortFieldText ||
+                !Enum.TryParse(sortFieldText, out LiveEventSortField sortField))
+            {
+                return;
+            }
+
+            ConsumeProviderViewModel.SortBy(sortField);
+        }
+
         private async void ExportEventsButton_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -437,6 +525,109 @@ namespace EtwSuite
             {
                 ConsumeProviderViewModel.ReportError(ex.Message);
             }
+        }
+
+        private async void AddTraceLoggingFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? selectedPath = ShowOpenDialog(
+                    ownerHandle,
+                    "Add TraceLogging PE file",
+                    new[]
+                    {
+                        new ComDlgFilterSpec { Name = "PE images", Spec = "*.exe;*.dll;*.sys" },
+                        new ComDlgFilterSpec { Name = "All files", Spec = "*.*" },
+                    });
+                if (string.IsNullOrWhiteSpace(selectedPath))
+                {
+                    return;
+                }
+
+                await TraceLoggingProvidersViewModel.AddPathAsync(
+                    selectedPath,
+                    TraceLoggingScanPathKind.File,
+                    _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async void AddTraceLoggingFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                nint ownerHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                string? selectedPath = ShowFolderDialog(ownerHandle, "Add TraceLogging scan folder");
+                if (string.IsNullOrWhiteSpace(selectedPath))
+                {
+                    return;
+                }
+
+                await TraceLoggingProvidersViewModel.AddPathAsync(
+                    selectedPath,
+                    TraceLoggingScanPathKind.Folder,
+                    _loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async void RemoveTraceLoggingPathButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await TraceLoggingProvidersViewModel.RemoveSelectedPathAsync(_loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private async void RefreshTraceLoggingProvidersButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                await TraceLoggingProvidersViewModel.RefreshAsync(_loadCancellation.Token);
+                await ProvidersViewModel.LoadProvidersAsync(_loadCancellation.Token);
+                await ConsumeProviderViewModel.LoadProvidersAsync(_loadCancellation.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                TraceLoggingProvidersViewModel.ReportError(ex.Message);
+            }
+        }
+
+        private void ConsumeTraceLoggingProviderButton_Click(object sender, RoutedEventArgs e)
+        {
+            EtwProviderInfo? provider = TraceLoggingProvidersViewModel.GetSelectedEtwProvider();
+            if (provider is null)
+            {
+                return;
+            }
+
+            ConsumeProviderViewModel.SelectProvider(provider);
+            Root.SelectedItem = ConsumeProviderNavigationItem;
+            UpdateConsumeProviderSearchText();
+            UpdateConsumeProviderMatchesVisibility();
         }
 
         private async Task PromptForSavedSessionsDatabaseAsync()
@@ -634,10 +825,32 @@ namespace EtwSuite
                 });
         }
 
+        private static string? ShowFolderDialog(nint ownerHandle, string title)
+        {
+            return ShowOpenDialog(
+                ownerHandle,
+                title,
+                [new ComDlgFilterSpec { Name = "Folders", Spec = "*.*" }],
+                FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.PickFolders);
+        }
+
         private static string? ShowOpenDialog(
             nint ownerHandle,
             string title,
             ComDlgFilterSpec[] filterSpecs)
+        {
+            return ShowOpenDialog(
+                ownerHandle,
+                title,
+                filterSpecs,
+                FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.FileMustExist);
+        }
+
+        private static string? ShowOpenDialog(
+            nint ownerHandle,
+            string title,
+            ComDlgFilterSpec[] filterSpecs,
+            FileOpenOptions options)
         {
             Type? dialogType = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
             if (dialogType is null)
@@ -653,7 +866,7 @@ namespace EtwSuite
             try
             {
                 dialog.SetTitle(title);
-                dialog.SetOptions(FileOpenOptions.ForceFileSystem | FileOpenOptions.PathMustExist | FileOpenOptions.FileMustExist);
+                dialog.SetOptions(options);
                 dialog.SetFileTypes((uint)filterSpecs.Length, filterSpecs);
 
                 int showResult = dialog.Show(ownerHandle);
@@ -792,6 +1005,7 @@ namespace EtwSuite
             PathMustExist = 0x00000800,
             ForceFileSystem = 0x00000040,
             FileMustExist = 0x00001000,
+            PickFolders = 0x00000020,
         }
 
         internal enum ShellItemDisplayName : uint
