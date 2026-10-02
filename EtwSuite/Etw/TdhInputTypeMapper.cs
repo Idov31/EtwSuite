@@ -49,24 +49,33 @@ internal static class TdhInputTypeMapper
         };
     }
 
-    public static string MapWmi(CimType type, string? stringTermination, string? extension = null)
+    public static string MapWmi(CimType type, string? stringTermination, string? extension = null, string? format = null)
     {
+        // MOF defaults to null termination; RString/RWString are null-terminated extensions.
+        // https://learn.microsoft.com/en-us/windows/win32/etw/event-tracing-mof-qualifiers
         if (!string.IsNullOrWhiteSpace(extension))
         {
-            return extension switch
+            return extension.Trim().ToUpperInvariant() switch
             {
-                "RWString" => "ReverseCountedWideString",
-                "RString" => "ReverseCountedAnsiString",
-                "Sid" => "WbemSid",
-                _ => type == CimType.Object ? extension : MapWmi(type, stringTermination)
+                "RWSTRING" => "WideString",
+                "RSTRING" => "AnsiString",
+                "SID" => "WbemSid",
+                _ => type == CimType.Object ? extension : MapWmi(type, stringTermination, format: format)
             };
         }
 
         if (type == CimType.String)
         {
-            return string.Equals(stringTermination, "NullTerminated", StringComparison.OrdinalIgnoreCase)
-                ? "WideString"
-                : "ReverseCountedWideString";
+            bool isWide = string.Equals(format?.Trim(), "w", StringComparison.OrdinalIgnoreCase);
+            string termination = stringTermination?.Trim() ?? string.Empty;
+            return termination.ToUpperInvariant() switch
+            {
+                "" or "NULLTERMINATED" => isWide ? "WideString" : "AnsiString",
+                "COUNTED" => isWide ? "CountedWideString" : "CountedAnsiString",
+                "REVERSECOUNTED" => isWide ? "ReverseCountedWideString" : "ReverseCountedAnsiString",
+                "NOTCOUNTED" => isWide ? "NonNullTerminatedWideString" : "NonNullTerminatedAnsiString",
+                _ => $"Unknown (StringTermination: {termination})"
+            };
         }
 
         return type switch
