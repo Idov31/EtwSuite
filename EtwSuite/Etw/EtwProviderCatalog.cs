@@ -893,6 +893,7 @@ public sealed class EtwProviderCatalog : IEtwProviderCatalog
         return TdhInputTypeMapper.MapWmi(
             property.Type,
             GetQualifierString(property, "StringTermination"),
-            GetQualifierString(property, "extension"));
+            GetQualifierString(property, "extension"),
+            GetQualifierString(property, "Format"));
     }
 }
